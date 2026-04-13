@@ -191,7 +191,8 @@ interactive_menu() {
         echo -e "  ${WHITE}6)${NC} Edit Anthropic token"
         echo -e "  ${WHITE}q)${NC} Quit"
         echo ""
-        read -p "Choose: " choice
+        read -n 1 -p "Choose: " choice
+        echo
         case "$choice" in
             1) switch_provider zai fast; read -p "Press Enter..." ;;
             2) switch_provider anthropic fast; read -p "Press Enter..." ;;
