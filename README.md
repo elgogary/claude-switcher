@@ -198,6 +198,9 @@ rm ~/.claude/claude-manager.sh ~/.claude/settings-zai.json ~/.claude/settings-an
 
 ## Changelog
 
+### v1.7.5 (2026-04-13)
+- **Fix PowerShell execution policy errors** — installer now calls `Unblock-File` on `cm.ps1` and `cm.cmd` after copying, removing the Zone.Identifier stream that marks files as "downloaded from internet". Also detects if the user's CurrentUser ExecutionPolicy is `Restricted` or `Undefined` and raises it to `RemoteSigned` (safe, user-scope, no admin needed). Users hit this when PowerShell refuses to load `cm.ps1` with "running scripts is disabled on this system."
+
 ### v1.7.4 (2026-04-13)
 - **Bug fix** — when v1.7.3 found Git Bash at a fallback location (because it wasn't on PATH), it added the dir to the current session's `$env:PATH` and then used that as the "already persisted" check. Result: Git's bin dir was NEVER written to the registry, so `cm.cmd` failed with `'bash' is not recognized` after the installer exited. Now checks only the User and Machine registry PATH, ignoring the session path. Reported by a user whose friend installed Git with the "Use Git from Git Bash only" option.
 

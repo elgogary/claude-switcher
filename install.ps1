@@ -169,7 +169,10 @@ try {
     # bash shim (single line file — Git Bash uses this)
     $bashShim = "#!/usr/bin/env bash`nexec bash `"`$HOME/.claude/claude-manager.sh`" `"`$@`""
     [IO.File]::WriteAllText("$BinDir\cm", $bashShim, [Text.UTF8Encoding]::new($false))
-    Ok "  installed cm, cm.cmd, cm.ps1"
+    # Remove Zone.Identifier so RemoteSigned policy doesn't block cm.ps1
+    Unblock-File "$BinDir\cm.ps1" -ErrorAction SilentlyContinue
+    Unblock-File "$BinDir\cm.cmd" -ErrorAction SilentlyContinue
+    Ok "  installed cm, cm.cmd, cm.ps1 (unblocked)"
 
     # Templates — only if not already present (don't clobber tokens)
     Info "[5/5] Installing provider templates"
@@ -227,6 +230,22 @@ $env:PATH = "$machinePath;$userPathNew"
 Ok ""
 Ok "[OK] claude-switcher installed!"
 Ok ""
+
+# Check PowerShell execution policy — if Restricted or Undefined (default),
+# cm.ps1 will be blocked. Offer to raise it to RemoteSigned (safe, user-scope).
+$policy = Get-ExecutionPolicy -Scope CurrentUser
+if ($policy -eq 'Restricted' -or $policy -eq 'Undefined') {
+    Warn ""
+    Warn "PowerShell execution policy is '$policy' — this will block cm.ps1."
+    Warn "Setting execution policy to RemoteSigned for your user (safe, no admin needed)..."
+    try {
+        Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force
+        Ok "  [ok] execution policy set to RemoteSigned (CurrentUser scope)"
+    } catch {
+        Warn "  [warn] could not set execution policy automatically. Run manually:"
+        Warn "    Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force"
+    }
+}
 
 # If tokens provided via env vars, run non-interactive setup
 $hasTokens = $env:CM_ZAI_TOKEN -or $env:CM_ANTHROPIC_TOKEN -or $env:CM_OPENROUTER_TOKEN -or `

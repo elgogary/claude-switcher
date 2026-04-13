@@ -4,7 +4,7 @@
 
 set -uo pipefail
 
-VERSION="1.7.4"
+VERSION="1.7.5"
 
 CLAUDE_DIR="$HOME/.claude"
 SETTINGS="$CLAUDE_DIR/settings.json"
