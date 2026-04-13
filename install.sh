@@ -87,12 +87,18 @@ ok ""
 ok "[OK] claude-switcher installed!"
 ok ""
 
-# Auto-launch the wizard ONLY if running interactively
-# (curl | bash has no TTY on stdin → wizard would read garbage)
-if [ -t 0 ] && [ -t 1 ]; then
+# Decide what to do next — 3 paths:
+#   1. Any CM_*_TOKEN env var is set → run setup-quiet (agent/stupid mode)
+#   2. Running interactively (TTY) → launch interactive wizard
+#   3. curl | bash with no TTY and no env vars → tell user what to do
+if [ -n "${CM_ZAI_TOKEN:-}${CM_ANTHROPIC_TOKEN:-}${CM_OPENROUTER_TOKEN:-}${CM_DEEPSEEK_TOKEN:-}${CM_KIMI_TOKEN:-}${CM_CUSTOM_TOKEN:-}" ]; then
+    info "Tokens detected in env vars — running non-interactive setup..."
+    bash "$CLAUDE_DIR/claude-manager.sh" setup-quiet
+elif [ -t 0 ] && [ -t 1 ]; then
     info "Starting setup wizard..."
     sleep 1
     bash "$CLAUDE_DIR/claude-manager.sh" setup
 else
     info "Next: run 'cm setup' to enter your tokens, or 'cm' for the menu."
+    info "Or: re-run with CM_ZAI_TOKEN=xxx (and others) for non-interactive setup."
 fi

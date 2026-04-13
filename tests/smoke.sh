@@ -92,6 +92,26 @@ echo "[smoke] status reflects kimi"
 out=$("${CM[@]}" status); echo "$out" | grep -q "Moonshot" || fail "status should report Moonshot Kimi"
 pass "status shows Moonshot Kimi"
 
+echo "[smoke] setup-quiet from env vars"
+# Reset to a known clean template so we can verify the token gets written
+cp "$REPO_ROOT/templates/settings-zai.json" "$HOME/.claude/settings-zai.json"
+cp "$REPO_ROOT/templates/settings-deepseek.json" "$HOME/.claude/settings-deepseek.json"
+CM_ZAI_TOKEN="quiet-test-zai-token" \
+CM_DEEPSEEK_TOKEN="quiet-test-ds-token" \
+CM_START="deepseek" \
+    "${CM[@]}" setup-quiet >/dev/null
+grep -q "quiet-test-zai-token" "$HOME/.claude/settings-zai.json" || fail "setup-quiet did not write zai token"
+grep -q "quiet-test-ds-token" "$HOME/.claude/settings-deepseek.json" || fail "setup-quiet did not write deepseek token"
+grep -q "deepseek" "$HOME/.claude/settings.json" || fail "setup-quiet did not switch to CM_START provider"
+pass "setup-quiet writes tokens from env vars and switches to CM_START"
+
+echo "[smoke] setup-quiet with no env vars exits non-zero"
+unset CM_ZAI_TOKEN CM_ANTHROPIC_TOKEN CM_OPENROUTER_TOKEN CM_DEEPSEEK_TOKEN CM_KIMI_TOKEN CM_CUSTOM_TOKEN CM_START
+if "${CM[@]}" setup-quiet >/dev/null 2>&1; then
+    fail "setup-quiet with no env vars should exit non-zero"
+fi
+pass "setup-quiet with no env vars rejected"
+
 echo "[smoke] unknown provider rejected"
 if "${CM[@]}" bogus fast >/dev/null 2>&1; then
     fail "unknown provider should have returned non-zero"

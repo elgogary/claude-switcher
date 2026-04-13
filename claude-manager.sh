@@ -4,7 +4,7 @@
 
 set -uo pipefail
 
-VERSION="1.3.0"
+VERSION="1.4.0"
 
 CLAUDE_DIR="$HOME/.claude"
 SETTINGS="$CLAUDE_DIR/settings.json"
@@ -261,6 +261,67 @@ PY
 }
 
 # -----------------------------------------------------------------------------
+# setup_quiet — non-interactive setup for agents / scripts / CI
+#
+# Reads tokens from env vars (one per provider):
+#   CM_ZAI_TOKEN, CM_ANTHROPIC_TOKEN, CM_OPENROUTER_TOKEN,
+#   CM_DEEPSEEK_TOKEN, CM_KIMI_TOKEN, CM_CUSTOM_TOKEN
+#
+# Optional: CM_START=<provider>  — switch to this provider after saving tokens.
+#           If unset, auto-picks the first provider whose token was provided.
+# Optional: CM_CUSTOM_URL=<url>  — for the custom provider, sets the base URL.
+#
+# Usage by an agent:
+#   CM_ZAI_TOKEN="xxx" CM_ANTHROPIC_TOKEN="yyy" cm setup-quiet
+# -----------------------------------------------------------------------------
+setup_quiet() {
+    echo -e "${CYAN}[claude-switcher] Non-interactive setup${NC}"
+    local i name upper_name env_var token saved_any=""
+    for i in "${!PROVIDER_NAMES[@]}"; do
+        name="${PROVIDER_NAMES[$i]}"
+        # Build env var name: CM_<UPPER>_TOKEN  (e.g. CM_ZAI_TOKEN)
+        upper_name=$(echo "$name" | tr '[:lower:]' '[:upper:]')
+        env_var="CM_${upper_name}_TOKEN"
+        token="${!env_var:-}"
+        if [ -n "$token" ]; then
+            printf '%s' "$token" | set_token "$CLAUDE_DIR/settings-$name.json"
+            echo -e "  ${GREEN}[OK]${NC} saved ${PROVIDER_LABELS[$i]} token (from \$$env_var)"
+            saved_any="${saved_any:-$name}"
+        fi
+    done
+
+    # Optional custom base URL (only meaningful for the custom provider)
+    if [ -n "${CM_CUSTOM_URL:-}" ] && [ -f "$CLAUDE_DIR/settings-custom.json" ]; then
+        python3 - "$CLAUDE_DIR/settings-custom.json" "$CM_CUSTOM_URL" <<'PY'
+import json, sys
+path, url = sys.argv[1], sys.argv[2]
+with open(path) as f:
+    data = json.load(f)
+data.setdefault("env", {})["ANTHROPIC_BASE_URL"] = url
+with open(path, "w") as f:
+    json.dump(data, f, indent=2)
+PY
+        echo -e "  ${GREEN}[OK]${NC} set custom base URL: $CM_CUSTOM_URL"
+    fi
+
+    if [ -z "$saved_any" ]; then
+        echo -e "${YELLOW}[warn] No CM_*_TOKEN env vars set — nothing to save.${NC}"
+        echo -e "${GRAY}Available: CM_ZAI_TOKEN CM_ANTHROPIC_TOKEN CM_OPENROUTER_TOKEN CM_DEEPSEEK_TOKEN CM_KIMI_TOKEN CM_CUSTOM_TOKEN${NC}"
+        return 1
+    fi
+
+    # Pick starting provider
+    local start="${CM_START:-$saved_any}"
+    if provider_index "$start" >/dev/null; then
+        switch_provider "$start" fast
+    else
+        echo -e "${YELLOW}[warn] Unknown CM_START=$start — skipping switch${NC}"
+    fi
+
+    echo -e "${GREEN}[DONE] Setup complete — restart Claude Code to apply.${NC}"
+}
+
+# -----------------------------------------------------------------------------
 # Setup wizard — prompts for tokens with hidden input
 # -----------------------------------------------------------------------------
 setup_wizard() {
@@ -371,7 +432,8 @@ show_help() {
     echo
     echo -e "${YELLOW}Usage:${NC}"
     echo "  cm                    Open interactive menu"
-    echo "  cm setup              Run setup wizard (enter tokens)"
+    echo "  cm setup              Run setup wizard (interactive, enter tokens)"
+    echo "  cm setup-quiet        Non-interactive setup from CM_*_TOKEN env vars"
     local i
     for i in "${!PROVIDER_NAMES[@]}"; do
         printf "  cm %-16s Switch to %s\n" "${PROVIDER_NAMES[$i]} [fast]" "${PROVIDER_LABELS[$i]}"
@@ -390,6 +452,7 @@ main() {
         check|status)         show_status; return ;;
         restore)              restore_backup; return ;;
         setup|wizard)         setup_wizard; return ;;
+        setup-quiet|quiet)    setup_quiet; return ;;
         version|-v|--version) echo "claude-switcher v$VERSION"; return ;;
         help|--help|-h)       show_help; return ;;
     esac

@@ -49,29 +49,54 @@ cm setup
 
 That's it — `cm` is now available in your terminal.
 
-### Option 2 — Ask an AI agent to install it for you
+### Option 2 — Ask an AI agent to install it (stupid mode)
 
 If you're already in **Claude Code**, **ChatGPT**, **Cursor**, **Codex**, or any other AI coding agent that can run shell commands, paste this prompt:
 
-> Install claude-switcher from https://github.com/elgogary/claude-switcher.
-> 1. Run: `curl -fsSL https://raw.githubusercontent.com/elgogary/claude-switcher/main/install.sh | bash`
-> 2. Verify it installed by running `cm version` (should print `claude-switcher v1.3.x`).
-> 3. Tell me to run `cm setup` to enter my API tokens. Don't run setup yourself — it needs interactive input that only I can provide.
-> 4. After I confirm setup is done, show me how to switch providers with `cm zai`, `cm anthropic`, `cm openrouter`, `cm deepseek`, `cm kimi`, or `cm custom`.
+> Install and configure claude-switcher from https://github.com/elgogary/claude-switcher for me.
+>
+> 1. Ask me which providers I want to use (Z.AI, Anthropic, OpenRouter, DeepSeek, Moonshot Kimi). I'll paste the API tokens for the ones I want.
+> 2. Once I give you the tokens, run this single command (substituting only the tokens I provided, omitting env vars for providers I skipped):
+>
+> ```bash
+> CM_ZAI_TOKEN="..." \
+> CM_ANTHROPIC_TOKEN="..." \
+> CM_OPENROUTER_TOKEN="..." \
+> CM_DEEPSEEK_TOKEN="..." \
+> CM_KIMI_TOKEN="..." \
+> CM_START="zai" \
+>   bash -c "$(curl -fsSL https://raw.githubusercontent.com/elgogary/claude-switcher/main/install.sh)"
+> ```
+>
+> 3. Verify by running `cm status` — it should show the provider I chose in `CM_START`.
+> 4. Tell me to restart Claude Code to apply the change.
 
-The agent will:
-- Run the install command
-- Verify it worked
-- Hand the wizard back to you (because token entry needs your hands on the keyboard — agents can't paste secrets they don't have)
-- Explain the next steps in your own language
+That's it. The agent asks for your tokens once, runs **one command**, and you're done. No manual JSON editing, no wizard prompts, no "press Enter to continue." The installer detects the `CM_*_TOKEN` env vars and runs setup non-interactively.
 
-**Why the agent can't do step 3:** the setup wizard reads tokens from your terminal with hidden input (`read -s`). An agent can't see your screen and shouldn't be storing your API keys anyway. So the agent installs the tool and you take 30 seconds to enter the tokens once.
+**Important security notes:**
 
-**After setup**, you can also ask the agent to switch providers for you:
+- Only paste tokens to an AI agent you trust (Claude Code on your own machine = safe; random web chat = risky).
+- The tokens go into `~/.claude/settings-*.json` on your local disk only — they're never sent anywhere claude-switcher controls.
+- If your agent runs in a container or remote box, the tokens land there, not on your laptop.
 
-> Switch Claude Code to Z.AI (GLM) and confirm the switch worked.
+### Option 3 — One command from your own terminal (also stupid mode)
 
-The agent will run `cm zai fast` and `cm status` to verify.
+If you're not using an agent and want the full one-line install + setup, copy this into your terminal and replace the placeholders with your real tokens:
+
+```bash
+CM_ZAI_TOKEN="your-zai-token" \
+CM_ANTHROPIC_TOKEN="your-anthropic-token" \
+CM_START="zai" \
+  bash -c "$(curl -fsSL https://raw.githubusercontent.com/elgogary/claude-switcher/main/install.sh)"
+```
+
+Set only the env vars for providers you actually use. `CM_START` picks which provider to activate after install (defaults to the first one whose token you provided).
+
+### After setup — ask the agent to switch providers anytime
+
+> Switch Claude Code to DeepSeek and confirm the switch worked.
+
+The agent runs `cm deepseek fast && cm status`. Done.
 
 ## Requirements
 
@@ -127,6 +152,13 @@ rm ~/.claude/claude-manager.sh ~/.claude/settings-zai.json ~/.claude/settings-an
 ```
 
 ## Changelog
+
+### v1.4.0 (2026-04-13)
+- **Stupid mode** — `cm setup-quiet` reads tokens from `CM_*_TOKEN` env vars (one per provider) and writes them non-interactively. The installer auto-detects these env vars and runs quiet setup, so the entire install + configure flow becomes a single command an AI agent can run unattended.
+- **Agent-friendly install command** in README — paste-able prompt for Claude Code / ChatGPT / Cursor that asks the user for tokens once, runs one command, done.
+- **`CM_START`** env var to pick which provider to activate after non-interactive setup.
+- **`CM_CUSTOM_URL`** env var to set the custom provider's base URL (for litellm/ccr/Ollama proxies).
+- 19 smoke tests (was 17) — covers quiet setup happy path + no-env-var rejection.
 
 ### v1.3.0 (2026-04-13)
 - **3 new providers**: DeepSeek, Moonshot Kimi, and a generic **Custom** proxy template for litellm/claude-code-router/Ollama adapters.
