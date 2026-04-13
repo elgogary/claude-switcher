@@ -84,7 +84,7 @@ pass "set_token writes token via stdin"
 
 echo "[smoke] restore backup (non-interactive)"
 # Write a known marker into a backup, then restore via the function directly
-backup_file=$(ls -t "$HOME/.claude/backups/"settings_*.json | head -1)
+backup_file=$(find "$HOME/.claude/backups" -name 'settings_*.json' | sort -r | head -1)
 echo '{"env":{"ANTHROPIC_AUTH_TOKEN":"restored-marker"}}' > "$backup_file"
 cp "$backup_file" "$HOME/.claude/settings.json"
 grep -q "restored-marker" "$HOME/.claude/settings.json" || fail "restore marker missing"
