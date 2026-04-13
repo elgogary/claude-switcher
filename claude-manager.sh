@@ -4,7 +4,7 @@
 
 set -uo pipefail
 
-VERSION="1.7.5"
+VERSION="1.8.0"
 
 CLAUDE_DIR="$HOME/.claude"
 SETTINGS="$CLAUDE_DIR/settings.json"
@@ -37,12 +37,49 @@ CYAN='\033[0;36m'; WHITE='\033[1;37m'; GRAY='\033[0;90m'
 NC='\033[0m'
 
 # -----------------------------------------------------------------------------
-# load_settings — single python3 call populates BASE_URL/TOKEN/SONNET/HAIKU/OPUS
+# Find a working Python — Windows has `python`/`py`, Linux/macOS have `python3`.
+# Windows also has a fake `python` that redirects to the Microsoft Store; we
+# detect and skip it by checking if --version actually succeeds.
+# -----------------------------------------------------------------------------
+find_python() {
+    local candidate out
+    for candidate in python3 python py; do
+        if command -v "$candidate" >/dev/null 2>&1; then
+            # The Store-alias fake python exits 0 but prints to stderr only.
+            # Real python prints "Python 3.x.y" to stdout.
+            out=$("$candidate" --version 2>/dev/null || true)
+            if [[ "$out" == Python* ]]; then
+                echo "$candidate"
+                return 0
+            fi
+        fi
+    done
+    return 1
+}
+PY=$(find_python || true)
+
+require_python() {
+    if [ -z "$PY" ]; then
+        echo -e "${RED}[ERROR] Python not found.${NC}" >&2
+        echo -e "${YELLOW}claude-switcher needs Python to read/write settings.json.${NC}" >&2
+        echo -e "${YELLOW}Install it:${NC}" >&2
+        echo -e "  Windows: ${WHITE}winget install Python.Python.3.12${NC}" >&2
+        echo -e "  macOS:   ${WHITE}brew install python3${NC}" >&2
+        echo -e "  Linux:   ${WHITE}sudo apt install python3${NC}" >&2
+        echo -e "${YELLOW}After installing, open a NEW terminal and try again.${NC}" >&2
+        return 1
+    fi
+    return 0
+}
+
+# -----------------------------------------------------------------------------
+# load_settings — single python call populates BASE_URL/TOKEN/SONNET/HAIKU/OPUS
 # Replaces 7 duplicated python3 invocations (DRY + 5x faster status reads)
 # -----------------------------------------------------------------------------
 load_settings() {
     BASE_URL=""; TOKEN=""; SONNET=""; HAIKU=""; OPUS=""
     [ -f "$SETTINGS" ] || return 1
+    require_python || return 1
     local key val
     while IFS=$'\t' read -r key val; do
         case "$key" in
@@ -52,7 +89,7 @@ load_settings() {
             HAIKU)    HAIKU="$val" ;;
             OPUS)     OPUS="$val" ;;
         esac
-    done < <(python3 - "$SETTINGS" <<'PY'
+    done < <("$PY" - "$SETTINGS" <<'PY'
 import json, sys
 try:
     with open(sys.argv[1]) as f:
@@ -242,9 +279,14 @@ restore_backup() {
 # -----------------------------------------------------------------------------
 set_token() {
     local file="$1"
+    require_python || return 1
     local token
     token=$(cat)
-    SWITCHER_TOKEN="$token" python3 - "$file" <<'PY'
+    if [ -z "$token" ]; then
+        echo -e "${RED}[ERROR] set_token: empty token${NC}" >&2
+        return 1
+    fi
+    SWITCHER_TOKEN="$token" "$PY" - "$file" <<'PY' || return 1
 import json, os, sys
 path = sys.argv[1]
 token = os.environ.get("SWITCHER_TOKEN", "")
@@ -284,15 +326,19 @@ setup_quiet() {
         env_var="CM_${upper_name}_TOKEN"
         token="${!env_var:-}"
         if [ -n "$token" ]; then
-            printf '%s' "$token" | set_token "$CLAUDE_DIR/settings-$name.json"
-            echo -e "  ${GREEN}[OK]${NC} saved ${PROVIDER_LABELS[$i]} token (from \$$env_var)"
-            saved_any="${saved_any:-$name}"
+            if printf '%s' "$token" | set_token "$CLAUDE_DIR/settings-$name.json"; then
+                echo -e "  ${GREEN}[OK]${NC} saved ${PROVIDER_LABELS[$i]} token (from \$$env_var)"
+                saved_any="${saved_any:-$name}"
+            else
+                echo -e "  ${RED}[FAIL]${NC} could not save ${PROVIDER_LABELS[$i]} token"
+            fi
         fi
     done
 
     # Optional custom base URL (only meaningful for the custom provider)
     if [ -n "${CM_CUSTOM_URL:-}" ] && [ -f "$CLAUDE_DIR/settings-custom.json" ]; then
-        python3 - "$CLAUDE_DIR/settings-custom.json" "$CM_CUSTOM_URL" <<'PY'
+        require_python || return 1
+        "$PY" - "$CLAUDE_DIR/settings-custom.json" "$CM_CUSTOM_URL" <<'PY'
 import json, sys
 path, url = sys.argv[1], sys.argv[2]
 with open(path) as f:
@@ -346,8 +392,11 @@ setup_wizard() {
         read -r -s -p "  Token: " token
         echo
         if [ -n "$token" ]; then
-            printf '%s' "$token" | set_token "$CLAUDE_DIR/settings-$name.json"
-            echo -e "  ${GREEN}[OK] $label token saved${NC}"
+            if printf '%s' "$token" | set_token "$CLAUDE_DIR/settings-$name.json"; then
+                echo -e "  ${GREEN}[OK] $label token saved${NC}"
+            else
+                echo -e "  ${RED}[FAIL] could not save $label token${NC}"
+            fi
         else
             echo -e "  ${GRAY}[skip]${NC}"
         fi
@@ -424,6 +473,81 @@ interactive_menu() {
     done
 }
 
+# -----------------------------------------------------------------------------
+# test_token — ping a provider's API and check the token works
+# Usage: test_token <provider>     (or empty = current active provider)
+# -----------------------------------------------------------------------------
+test_one_provider() {
+    local name="$1"
+    local idx
+    if ! idx=$(provider_index "$name"); then
+        echo -e "  ${RED}[?]${NC} unknown provider: $name"
+        return 1
+    fi
+    local label="${PROVIDER_LABELS[$idx]}"
+    local file="$CLAUDE_DIR/settings-$name.json"
+    if [ ! -f "$file" ]; then
+        echo -e "  ${YELLOW}[-]${NC} $label — template missing"
+        return 1
+    fi
+    require_python || return 1
+    # Read the settings for THIS provider's template
+    local tok url
+    tok=$("$PY" -c "import json; print(json.load(open('$file')).get('env',{}).get('ANTHROPIC_AUTH_TOKEN',''))" 2>/dev/null || true)
+    url=$("$PY" -c "import json; print(json.load(open('$file')).get('env',{}).get('ANTHROPIC_BASE_URL',''))" 2>/dev/null || true)
+
+    if [ -z "$tok" ] || [[ "$tok" == YOUR_*_TOKEN_HERE ]]; then
+        echo -e "  ${YELLOW}[-]${NC} $label — no token (run: cm setup)"
+        return 1
+    fi
+    # Default base for native Anthropic if blank
+    [ -z "$url" ] && url="https://api.anthropic.com"
+
+    # Hit the messages endpoint with a minimal request. Status 200/400 = auth OK
+    # (400 just means our request body was tiny, but the auth header was accepted).
+    # Status 401/403 = bad token.
+    local http_code
+    http_code=$(curl -sS -o /dev/null -w "%{http_code}" \
+        -X POST "${url}/v1/messages" \
+        -H "x-api-key: $tok" \
+        -H "anthropic-version: 2023-06-01" \
+        -H "content-type: application/json" \
+        -d '{"model":"claude-3-5-haiku-20241022","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}' \
+        --max-time 10 2>/dev/null || echo "000")
+
+    case "$http_code" in
+        200)        echo -e "  ${GREEN}[OK]${NC}  $label — token VALID (200)" ;;
+        400|404)    echo -e "  ${GREEN}[OK]${NC}  $label — token accepted ($http_code: model name not supported but auth works)" ;;
+        401)        echo -e "  ${RED}[X]${NC}   $label — token INVALID (401 unauthorized)"; return 1 ;;
+        403)        echo -e "  ${RED}[X]${NC}   $label — token FORBIDDEN (403)"; return 1 ;;
+        429)        echo -e "  ${YELLOW}[!]${NC}  $label — token valid but RATE LIMITED (429)" ;;
+        000)        echo -e "  ${RED}[X]${NC}   $label — could not reach $url (network/DNS error)"; return 1 ;;
+        *)          echo -e "  ${YELLOW}[?]${NC}  $label — unexpected HTTP $http_code from $url"; return 1 ;;
+    esac
+    return 0
+}
+
+test_token() {
+    local target="${1:-}"
+    if ! command -v curl >/dev/null 2>&1; then
+        echo -e "${RED}[ERROR] curl not found — required for cm test${NC}" >&2
+        return 1
+    fi
+    echo -e "${CYAN}========================================${NC}"
+    echo -e "${WHITE}  Token validation${NC}"
+    echo -e "${CYAN}========================================${NC}"
+    if [ -n "$target" ]; then
+        test_one_provider "$target"
+    else
+        # No arg → test all providers that have a non-placeholder token
+        local i
+        for i in "${!PROVIDER_NAMES[@]}"; do
+            test_one_provider "${PROVIDER_NAMES[$i]}" || true
+        done
+    fi
+    echo -e "${CYAN}========================================${NC}"
+}
+
 show_help() {
     echo
     echo -e "${CYAN}========================================${NC}"
@@ -434,6 +558,7 @@ show_help() {
     echo "  cm                    Open interactive menu"
     echo "  cm setup              Run setup wizard (interactive, enter tokens)"
     echo "  cm setup-quiet        Non-interactive setup from CM_*_TOKEN env vars"
+    echo "  cm test [provider]    Validate token by pinging the provider's API"
     local i
     for i in "${!PROVIDER_NAMES[@]}"; do
         printf "  cm %-16s Switch to %s\n" "${PROVIDER_NAMES[$i]} [fast]" "${PROVIDER_LABELS[$i]}"
@@ -453,6 +578,7 @@ main() {
         restore)              restore_backup; return ;;
         setup|wizard)         setup_wizard; return ;;
         setup-quiet|quiet)    setup_quiet; return ;;
+        test)                 test_token "${2:-}"; return ;;
         version|-v|--version) echo "claude-switcher v$VERSION"; return ;;
         help|--help|-h)       show_help; return ;;
     esac

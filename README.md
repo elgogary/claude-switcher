@@ -198,6 +198,13 @@ rm ~/.claude/claude-manager.sh ~/.claude/settings-zai.json ~/.claude/settings-an
 
 ## Changelog
 
+### v1.8.0 (2026-04-13)
+- **Python detection** — `claude-manager.sh` now tries `python3`, then `python`, then `py` in order. Fixes Windows where Python is usually installed as `python` or `py`, not `python3`. Also detects and rejects the Microsoft Store fake `python` alias (which exits 0 but prints to stderr only).
+- **Auto-install Python via winget** — if the PowerShell installer detects Python is missing, it offers to run `winget install Python.Python.3.12 -e --source winget` and refreshes PATH after install.
+- **Fix silent failure in setup-quiet / setup wizard** — when `set_token` failed (e.g. Python not found), the calling code printed `[OK] saved` anyway because it never checked the exit code. Now prints `[FAIL]` and reports the real status.
+- **NEW: `cm test [provider]`** — pings each provider's `/v1/messages` endpoint with the saved token and reports VALID / INVALID / RATE LIMITED / UNREACHABLE. Run `cm test` with no argument to test ALL providers, or `cm test zai` to test just one.
+- Reported by user: friend's Windows had Git but no Python; setup-quiet "succeeded" but the token was never written, and `cm status` showed Unknown forever.
+
 ### v1.7.5 (2026-04-13)
 - **Fix PowerShell execution policy errors** — installer now calls `Unblock-File` on `cm.ps1` and `cm.cmd` after copying, removing the Zone.Identifier stream that marks files as "downloaded from internet". Also detects if the user's CurrentUser ExecutionPolicy is `Restricted` or `Undefined` and raises it to `RemoteSigned` (safe, user-scope, no admin needed). Users hit this when PowerShell refuses to load `cm.ps1` with "running scripts is disabled on this system."
 

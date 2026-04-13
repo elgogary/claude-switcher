@@ -134,6 +134,68 @@ Then close PowerShell, open a NEW window, and re-run this installer.
 }
 Ok "  Git Bash found: $($bashCmd.Source)"
 
+# Python check — required at runtime by claude-manager.sh for JSON parsing.
+# Windows often has 'python' or 'py' but not 'python3'. The Microsoft Store
+# has a fake 'python' alias that redirects to install — detect and reject it.
+function Test-RealPython {
+    param([string]$cmd)
+    try {
+        $out = & $cmd --version 2>$null
+        return ($out -and $out -match '^Python ')
+    } catch {
+        return $false
+    }
+}
+$pythonOk = $false
+foreach ($pyCandidate in @('python3','python','py')) {
+    if (Get-Command $pyCandidate -ErrorAction SilentlyContinue) {
+        if (Test-RealPython $pyCandidate) {
+            Ok "  Python found: $pyCandidate"
+            $pythonOk = $true
+            break
+        }
+    }
+}
+if (-not $pythonOk) {
+    Warn ""
+    Warn "Python not found — claude-switcher needs Python to read/write settings.json."
+    $wingetCmd2 = Get-Command winget -ErrorAction SilentlyContinue
+    if ($wingetCmd2) {
+        Info "winget is available. Installing Python 3.12 (1-2 min)..."
+        winget install --id Python.Python.3.12 -e --source winget --accept-source-agreements --accept-package-agreements 2>&1 | Out-Host
+        # Refresh PATH so python becomes visible in this session
+        $env:PATH = [Environment]::GetEnvironmentVariable('PATH','Machine') + ';' + [Environment]::GetEnvironmentVariable('PATH','User')
+        # Re-check
+        foreach ($pyCandidate in @('python3','python','py')) {
+            if ((Get-Command $pyCandidate -ErrorAction SilentlyContinue) -and (Test-RealPython $pyCandidate)) {
+                Ok "  Python installed: $pyCandidate"
+                $pythonOk = $true
+                break
+            }
+        }
+        if (-not $pythonOk) {
+            Die @"
+
+winget reported success but Python is still not findable.
+
+Close PowerShell, open a NEW window, and re-run this installer.
+The new window will pick up the updated PATH.
+"@
+        }
+    } else {
+        Die @"
+
+Python is required but not found, and winget isn't available either.
+
+Install Python manually:
+  https://www.python.org/downloads/windows/
+  (during install, check 'Add python.exe to PATH')
+
+Then close PowerShell, open a NEW window, and re-run this installer.
+"@
+    }
+}
+
 # Create target dirs
 New-Item -ItemType Directory -Force -Path $ClaudeDir, $BinDir | Out-Null
 
