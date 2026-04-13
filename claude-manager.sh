@@ -164,8 +164,52 @@ restore_backup() {
     fi
 }
 
+interactive_menu() {
+    while true; do
+        clear
+        echo -e "${CYAN}========================================${NC}"
+        echo -e "${WHITE}  CLAUDE CODE PROVIDER SWITCHER${NC}"
+        echo -e "${CYAN}========================================${NC}"
+
+        local current="unknown"
+        if [ -f "$SETTINGS" ]; then
+            local base_url=$(python3 -c "import json; d=json.load(open('$SETTINGS')); print(d.get('env',{}).get('ANTHROPIC_BASE_URL',''))" 2>/dev/null)
+            if [[ "$base_url" == *z.ai* ]]; then
+                current="${YELLOW}Z.AI (GLM)${NC}"
+            else
+                current="${GREEN}Claude Original (Anthropic)${NC}"
+            fi
+        fi
+        echo -e "  Current: $current"
+        echo -e "${CYAN}========================================${NC}"
+        echo ""
+        echo -e "  ${WHITE}1)${NC} Switch to ${YELLOW}Z.AI (GLM-5.1)${NC}"
+        echo -e "  ${WHITE}2)${NC} Switch to ${GREEN}Claude (Anthropic)${NC}"
+        echo -e "  ${WHITE}3)${NC} Show full status"
+        echo -e "  ${WHITE}4)${NC} Restore a backup"
+        echo -e "  ${WHITE}5)${NC} Edit Z.AI token"
+        echo -e "  ${WHITE}6)${NC} Edit Anthropic token"
+        echo -e "  ${WHITE}q)${NC} Quit"
+        echo ""
+        read -p "Choose: " choice
+        case "$choice" in
+            1) switch_provider zai fast; read -p "Press Enter..." ;;
+            2) switch_provider anthropic fast; read -p "Press Enter..." ;;
+            3) show_status; read -p "Press Enter..." ;;
+            4) restore_backup; read -p "Press Enter..." ;;
+            5) ${EDITOR:-nano} "$CLAUDE_DIR/settings-zai.json" ;;
+            6) ${EDITOR:-nano} "$CLAUDE_DIR/settings-anthropic.json" ;;
+            q|Q) echo -e "${CYAN}Bye!${NC}"; exit 0 ;;
+            *) echo -e "${RED}Invalid choice${NC}"; sleep 1 ;;
+        esac
+    done
+}
+
 # Main
-case "${1:-help}" in
+case "${1:-menu}" in
+    menu|"")
+        interactive_menu
+        ;;
     check|status)
         show_status
         ;;
@@ -183,6 +227,7 @@ case "${1:-help}" in
         echo -e "${WHITE}CLAUDE CODE PROVIDER MANAGER${NC}"
         echo -e "${CYAN}========================================${NC}"
         echo -e "\n${YELLOW}Usage:${NC}"
+        echo -e "  ${WHITE}cm                    - Open interactive menu${NC}"
         echo -e "  ${WHITE}cm check              - Show current status${NC}"
         echo -e "  ${WHITE}cm anthropic          - Switch to Anthropic${NC}"
         echo -e "  ${WHITE}cm zai                - Switch to Z.AI${NC}"
