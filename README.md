@@ -107,15 +107,38 @@ The installer fails fast with a clear error if any of these are missing.
 
 ### Windows
 
-claude-switcher works on Windows via **Git for Windows** (which ships `bash`, `curl`, `tar`, and friends). Install Git from https://git-scm.com/download/win, then:
+claude-switcher needs **Git for Windows** (for `bash.exe`). Install it from https://git-scm.com/download/win — during setup pick **"Git from the command line and also from 3rd-party software"** (the middle option).
 
-1. Open **Git Bash** (not PowerShell — the installer is a bash script)
-2. Run the install command from the [Install](#install) section
-3. The installer auto-detects Windows and drops `cm.cmd` + `cm.ps1` wrappers next to the bash `cm` shim, so you can run `cm` from **PowerShell**, **cmd.exe**, or **Git Bash** — all three work the same
+After Git is installed, pick **one** of these install methods:
 
-The installer **auto-adds** `%USERPROFILE%\.local\bin` to your Windows user PATH via PowerShell's `[Environment]::SetEnvironmentVariable`. No manual step. Close Git Bash, open a fresh PowerShell or cmd.exe window, and `cm` just works.
+**Method A — from PowerShell (recommended, no Git Bash needed for install)**
 
-**WSL also works** — inside WSL, it's just Linux, no special handling needed.
+```powershell
+iwr -useb https://raw.githubusercontent.com/elgogary/claude-switcher/main/install.ps1 | iex
+```
+
+This:
+- Downloads and extracts the release using native Windows (`Invoke-WebRequest` + `Expand-Archive`)
+- Installs `cm` / `cm.cmd` / `cm.ps1` to `%USERPROFILE%\.local\bin`
+- Adds that dir to your Windows user PATH
+- **Refreshes the current PowerShell session's PATH** — so `cm` works immediately, no reopen needed
+- Runs the setup wizard if you provided tokens via env vars
+
+**Method B — from Git Bash (same installer as Linux/macOS)**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/elgogary/claude-switcher/main/install.sh | bash
+```
+
+Works identically on Git Bash, WSL, macOS, and Linux.
+
+**Method C — from cmd.exe**
+
+```cmd
+powershell -NoProfile -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercontent.com/elgogary/claude-switcher/main/install.ps1 | iex"
+```
+
+After install, `cm` works from **PowerShell**, **cmd.exe**, and **Git Bash** — all three.
 
 ## Usage
 
@@ -164,6 +187,11 @@ rm ~/.claude/claude-manager.sh ~/.claude/settings-zai.json ~/.claude/settings-an
 ```
 
 ## Changelog
+
+### v1.7.0 (2026-04-13)
+- **Native PowerShell installer** — `install.ps1` downloads + extracts via `Invoke-WebRequest` and `Expand-Archive`, no Git Bash needed for the install step (bash is still needed at runtime for `claude-manager.sh`).
+- **Current-session PATH refresh** — the PowerShell installer updates `$env:PATH` in the running session, so `cm` works immediately without closing/reopening the terminal.
+- README gives 3 Windows install methods: PowerShell (`iwr | iex`), Git Bash (`curl | bash`), or cmd.exe (via `powershell -Command`).
 
 ### v1.6.0 (2026-04-13)
 - **Auto-add Windows PATH** — the installer now calls `powershell.exe` during install to append `~/.local/bin` to the Windows user PATH via `[Environment]::SetEnvironmentVariable('PATH', ..., 'User')`. Zero manual steps. Idempotent — checks if already present before appending.
