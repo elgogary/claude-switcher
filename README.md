@@ -4,6 +4,35 @@ One-command provider switcher for [Claude Code](https://docs.claude.com/en/docs/
 
 [![CI](https://github.com/elgogary/claude-switcher/actions/workflows/ci.yml/badge.svg)](https://github.com/elgogary/claude-switcher/actions/workflows/ci.yml)
 
+## Why this exists
+
+Claude Code reads its API endpoint and model from `~/.claude/settings.json`. To switch providers you have to:
+
+1. Open the file in an editor
+2. Find `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, and the three `ANTHROPIC_DEFAULT_*_MODEL` fields
+3. Paste the right values for the provider you want
+4. Save without breaking the JSON
+5. Hope you didn't typo the URL
+
+That's 5 steps every time you want to try a cheaper model on Z.AI, fall back to Anthropic for a hard task, or route through OpenRouter to test a Llama or GPT model. After doing it twice you start copy-pasting blocks between sticky notes, and after the third typo crashes Claude Code on startup you start backing up the file before every edit.
+
+**This tool is the muscle memory:**
+
+- One command (`cm`) to switch — no editor, no JSON, no risk of breaking the file
+- Tokens entered **once** through a wizard with hidden input, then never touched again
+- Every switch creates a timestamped backup so you can always roll back
+- A single `curl | bash` install line your friends can run without any context
+
+The whole thing is ~350 lines of bash. There is no daemon, no config service, no telemetry — just three small JSON templates and a script that copies the right one over `settings.json` when you ask it to.
+
+### Why three providers?
+
+- **Anthropic** — the original. Best quality for hard reasoning, but the most expensive.
+- **Z.AI (GLM)** — much cheaper, fast, good enough for routine refactors and exploration. Speaks the Anthropic API natively at `https://api.z.ai/api/anthropic`.
+- **OpenRouter** — gateway to dozens of models (Anthropic, OpenAI, Meta, Mistral, DeepSeek, Qwen…). Useful when you want to A/B a Llama 3.1 405B against Sonnet on the same task, or burn down free-tier credits across providers.
+
+The right model for a task is rarely the same as yesterday. Switching should take one keystroke, not five steps.
+
 ## Install
 
 ```bash
