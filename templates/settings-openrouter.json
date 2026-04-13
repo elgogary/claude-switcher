@@ -1,0 +1,10 @@
+{
+  "env": {
+    "ANTHROPIC_AUTH_TOKEN": "YOUR_OPENROUTER_TOKEN_HERE",
+    "ANTHROPIC_BASE_URL": "https://openrouter.ai/api/v1",
+    "API_TIMEOUT_MS": "3000000",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "anthropic/claude-3.5-sonnet",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "anthropic/claude-3.5-haiku",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "anthropic/claude-3-opus"
+  }
+}
