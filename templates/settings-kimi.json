@@ -1,0 +1,10 @@
+{
+  "env": {
+    "ANTHROPIC_AUTH_TOKEN": "YOUR_MOONSHOT_TOKEN_HERE",
+    "ANTHROPIC_BASE_URL": "https://api.moonshot.cn/anthropic",
+    "API_TIMEOUT_MS": "3000000",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "kimi-k2-0905-preview",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "kimi-k2-0905-preview",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "kimi-k2-0905-preview"
+  }
+}

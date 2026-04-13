@@ -13,10 +13,10 @@ mkdir -p "$HOME/.claude"
 CM_SCRIPT="$HOME/.claude/claude-manager.sh"
 
 # Install files directly (skip the curl path — that's not under test here)
-cp "$REPO_ROOT/claude-manager.sh"                  "$CM_SCRIPT"
-cp "$REPO_ROOT/templates/settings-zai.json"        "$HOME/.claude/settings-zai.json"
-cp "$REPO_ROOT/templates/settings-anthropic.json"  "$HOME/.claude/settings-anthropic.json"
-cp "$REPO_ROOT/templates/settings-openrouter.json" "$HOME/.claude/settings-openrouter.json"
+cp "$REPO_ROOT/claude-manager.sh" "$CM_SCRIPT"
+for t in zai anthropic openrouter deepseek kimi custom; do
+    cp "$REPO_ROOT/templates/settings-$t.json" "$HOME/.claude/settings-$t.json"
+done
 chmod +x "$CM_SCRIPT"
 
 CM=(bash "$CM_SCRIPT")
@@ -25,7 +25,7 @@ pass() { echo "  PASS: $*"; }
 fail() { echo "  FAIL: $*"; exit 1; }
 
 echo "[smoke] version subcommand"
-out=$("${CM[@]}" version); echo "$out" | grep -q "v1.2" || fail "version output missing"
+out=$("${CM[@]}" version); echo "$out" | grep -qE "v1\.[0-9]+" || fail "version output missing"
 pass "version reports v1.2.x"
 
 echo "[smoke] help subcommand"
@@ -62,7 +62,7 @@ fi
 pass "switched to anthropic"
 
 echo "[smoke] status reflects anthropic"
-out=$("${CM[@]}" status); echo "$out" | grep -q "Claude Original" || fail "status should report Anthropic"
+out=$("${CM[@]}" status); echo "$out" | grep -q "Anthropic" || fail "status should report Anthropic"
 pass "status shows Anthropic"
 
 echo "[smoke] switch to openrouter (fast mode)"
@@ -73,6 +73,30 @@ pass "switched to openrouter"
 echo "[smoke] status reflects openrouter"
 out=$("${CM[@]}" status); echo "$out" | grep -q "OpenRouter" || fail "status should report OpenRouter"
 pass "status shows OpenRouter"
+
+echo "[smoke] switch to deepseek (fast mode)"
+"${CM[@]}" deepseek fast >/dev/null
+grep -q "deepseek" "$HOME/.claude/settings.json" || fail "settings.json missing deepseek URL"
+pass "switched to deepseek"
+
+echo "[smoke] status reflects deepseek"
+out=$("${CM[@]}" status); echo "$out" | grep -q "DeepSeek" || fail "status should report DeepSeek"
+pass "status shows DeepSeek"
+
+echo "[smoke] switch to kimi (fast mode)"
+"${CM[@]}" kimi fast >/dev/null
+grep -q "moonshot" "$HOME/.claude/settings.json" || fail "settings.json missing moonshot URL"
+pass "switched to kimi"
+
+echo "[smoke] status reflects kimi"
+out=$("${CM[@]}" status); echo "$out" | grep -q "Moonshot" || fail "status should report Moonshot Kimi"
+pass "status shows Moonshot Kimi"
+
+echo "[smoke] unknown provider rejected"
+if "${CM[@]}" bogus fast >/dev/null 2>&1; then
+    fail "unknown provider should have returned non-zero"
+fi
+pass "unknown provider rejected"
 
 echo "[smoke] set_token via stdin (no token in process argv)"
 # Source the script — main() is guarded so this won't execute the case statement

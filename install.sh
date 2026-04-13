@@ -39,9 +39,10 @@ tar -xzf "$tmpdir/release.tar.gz" -C "$tmpdir" \
 
 src="$tmpdir/claude-switcher-$BRANCH"
 [ -f "$src/claude-manager.sh" ]            || die "release missing claude-manager.sh"
-[ -f "$src/templates/settings-zai.json" ]        || die "release missing templates/settings-zai.json"
-[ -f "$src/templates/settings-anthropic.json" ]  || die "release missing templates/settings-anthropic.json"
-[ -f "$src/templates/settings-openrouter.json" ] || die "release missing templates/settings-openrouter.json"
+# Verify all expected template files exist in the release
+for t in zai anthropic openrouter deepseek kimi custom; do
+    [ -f "$src/templates/settings-$t.json" ] || die "release missing templates/settings-$t.json"
+done
 
 # Backup existing manager script before overwrite (preserves user edits + downgrades)
 info "[2/4] Installing claude-manager.sh"
@@ -56,7 +57,8 @@ install -m 755 "$src/claude-manager.sh" "$CLAUDE_DIR/claude-manager.sh"
 
 # Templates — only install if not already present (don't clobber user tokens)
 info "[3/4] Installing templates"
-for f in settings-zai.json settings-anthropic.json settings-openrouter.json; do
+for t in zai anthropic openrouter deepseek kimi custom; do
+    f="settings-$t.json"
     if [ -f "$CLAUDE_DIR/$f" ]; then
         warn "  skip $f (already exists)"
     else

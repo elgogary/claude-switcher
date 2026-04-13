@@ -1,6 +1,6 @@
 # claude-switcher
 
-One-command provider switcher for [Claude Code](https://docs.claude.com/en/docs/claude-code) — flip between **Anthropic**, **Z.AI (GLM)**, and **OpenRouter** without editing JSON by hand.
+One-command provider switcher for [Claude Code](https://docs.claude.com/en/docs/claude-code) — flip between **Anthropic**, **Z.AI (GLM)**, **OpenRouter**, **DeepSeek**, **Moonshot Kimi**, and any custom proxy without editing JSON by hand.
 
 [![CI](https://github.com/elgogary/claude-switcher/actions/workflows/ci.yml/badge.svg)](https://github.com/elgogary/claude-switcher/actions/workflows/ci.yml)
 
@@ -62,6 +62,9 @@ cm setup              # run the setup wizard (enter tokens)
 cm zai                # switch to Z.AI (GLM)
 cm anthropic          # switch to Claude (Anthropic)
 cm openrouter         # switch to OpenRouter
+cm deepseek           # switch to DeepSeek
+cm kimi               # switch to Moonshot Kimi
+cm custom             # switch to your custom proxy / router
 cm status             # show current provider
 cm restore            # restore from a backup
 cm version            # show version
@@ -76,13 +79,20 @@ Restart Claude Code after switching.
 
 `claude-manager.sh` copies `~/.claude/settings-zai.json` or `~/.claude/settings-anthropic.json` over `~/.claude/settings.json`. Claude Code reads that file on startup to pick the API endpoint and model. Every switch creates a timestamped backup in `~/.claude/backups/` so you can always roll back.
 
-## Get tokens
+## Providers
 
-- **Z.AI**: https://z.ai/manage-apikey/apikey-list
-- **Anthropic**: https://console.anthropic.com/settings/keys
-- **OpenRouter**: https://openrouter.ai/keys
+| Provider | Token URL | Default model | Notes |
+|---|---|---|---|
+| **Anthropic** | https://console.anthropic.com/settings/keys | `claude-3.5-sonnet` | The original. Highest quality, highest cost. |
+| **Z.AI (GLM)** | https://z.ai/manage-apikey/apikey-list | `glm-5.1` | Cheap, fast, native Anthropic-format endpoint. |
+| **OpenRouter** | https://openrouter.ai/keys | `anthropic/claude-3.5-sonnet` | Gateway to dozens of models — edit the template to pick `openai/gpt-4o`, `meta-llama/llama-3.1-405b`, etc. |
+| **DeepSeek** | https://platform.deepseek.com/api_keys | `deepseek-chat` / `deepseek-reasoner` | Native Anthropic endpoint at `api.deepseek.com/anthropic`. |
+| **Moonshot Kimi** | https://platform.moonshot.cn/console/api-keys | `kimi-k2-0905-preview` | Native Anthropic endpoint at `api.moonshot.cn/anthropic`. |
+| **Custom** | (your own) | (your own) | Blank template — edit `~/.claude/settings-custom.json` to point at any proxy/router (litellm, claude-code-router, Ollama via adapter, etc.). |
 
-> **Note on OpenRouter**: the template defaults to `anthropic/claude-3.5-sonnet` / `claude-3.5-haiku` / `claude-3-opus`. To use a different model (e.g. `openai/gpt-4o`, `meta-llama/llama-3.1-405b`), edit `~/.claude/settings-openrouter.json` and change the `ANTHROPIC_DEFAULT_*_MODEL` values. OpenRouter accepts Anthropic-format requests at `https://openrouter.ai/api/v1` and translates to whichever model you pick.
+### Adding a new provider
+
+Drop a `templates/settings-<name>.json` file in the repo, then add one row each to the four arrays at the top of `claude-manager.sh` (`PROVIDER_NAMES`, `PROVIDER_LABELS`, `PROVIDER_URLS`, `PROVIDER_PATTERNS`). The wizard, menu, status display, help text, and `cm <name>` command auto-pick it up. PRs welcome.
 
 ## Uninstall
 
@@ -91,6 +101,12 @@ rm ~/.claude/claude-manager.sh ~/.claude/settings-zai.json ~/.claude/settings-an
 ```
 
 ## Changelog
+
+### v1.3.0 (2026-04-13)
+- **3 new providers**: DeepSeek, Moonshot Kimi, and a generic **Custom** proxy template for litellm/claude-code-router/Ollama adapters.
+- **Data-driven registry** — `claude-manager.sh` now loops over a `PROVIDER_NAMES` array instead of hardcoding every provider in 5 places. Adding a new provider is a 2-file change: drop a template, append one row to each of 4 arrays.
+- **Unknown command errors** — `cm bogus` now exits non-zero and prints help, instead of silently showing help with a success exit code.
+- **Smoke tests bumped to 17** — now cover all 5 provider switches + unknown-command rejection.
 
 ### v1.2.0 (2026-04-13)
 - **OpenRouter support** — third provider option alongside Z.AI and Anthropic. Pick any model OpenRouter offers (`anthropic/*`, `openai/*`, `meta-llama/*`, etc.) by editing the template.

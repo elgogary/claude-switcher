@@ -4,13 +4,33 @@
 
 set -uo pipefail
 
-VERSION="1.2.0"
+VERSION="1.3.0"
 
 CLAUDE_DIR="$HOME/.claude"
 SETTINGS="$CLAUDE_DIR/settings.json"
 BACKUP_DIR="$CLAUDE_DIR/backups"
 
 mkdir -p "$BACKUP_DIR"
+
+# -----------------------------------------------------------------------------
+# Provider registry (data-driven — add a provider by appending one row each)
+# -----------------------------------------------------------------------------
+# NAMES: short names used for `cm <name>` and template filename `settings-<name>.json`
+# LABELS: human-readable display name
+# URLS: where to get the API token
+# PATTERNS: substring of ANTHROPIC_BASE_URL to detect provider in current settings
+#           (empty pattern = anthropic native, used as fallback)
+PROVIDER_NAMES=(zai     anthropic              openrouter      deepseek                         kimi                                   custom)
+PROVIDER_LABELS=("Z.AI (GLM)" "Claude (Anthropic)" "OpenRouter" "DeepSeek"                       "Moonshot Kimi"                        "Custom proxy")
+PROVIDER_URLS=(
+    "https://z.ai/manage-apikey/apikey-list"
+    "https://console.anthropic.com/settings/keys"
+    "https://openrouter.ai/keys"
+    "https://platform.deepseek.com/api_keys"
+    "https://platform.moonshot.cn/console/api-keys"
+    "(set ANTHROPIC_BASE_URL in ~/.claude/settings-custom.json first)"
+)
+PROVIDER_PATTERNS=(z.ai "" openrouter deepseek moonshot "")
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 CYAN='\033[0;36m'; WHITE='\033[1;37m'; GRAY='\033[0;90m'
@@ -53,13 +73,29 @@ PY
 )
 }
 
+# Look up provider index by short name — returns index on stdout, 1 if not found
+provider_index() {
+    local target="$1" i
+    for i in "${!PROVIDER_NAMES[@]}"; do
+        [ "${PROVIDER_NAMES[$i]}" = "$target" ] && { echo "$i"; return 0; }
+    done
+    return 1
+}
+
+# Detect current provider by matching base_url against known patterns.
+# Falls back to "anthropic" if any settings exist but no pattern matched.
 current_provider() {
     load_settings || { echo "unknown"; return; }
-    if [[ "$BASE_URL" == *z.ai* ]]; then
-        echo "zai"
-    elif [[ "$BASE_URL" == *openrouter* ]]; then
-        echo "openrouter"
-    elif [ -n "$BASE_URL$TOKEN" ]; then
+    local i pattern
+    for i in "${!PROVIDER_NAMES[@]}"; do
+        pattern="${PROVIDER_PATTERNS[$i]}"
+        [ -z "$pattern" ] && continue
+        if [[ "$BASE_URL" == *"$pattern"* ]]; then
+            echo "${PROVIDER_NAMES[$i]}"
+            return
+        fi
+    done
+    if [ -n "$BASE_URL$TOKEN" ]; then
         echo "anthropic"
     else
         echo "unknown"
@@ -92,30 +128,25 @@ show_status() {
     fi
 
     load_settings
-
-    if [[ "$BASE_URL" == *z.ai* ]]; then
-        echo -e "\n${YELLOW}[PROVIDER] Z.AI (GLM)${NC}"
-        echo -e "${CYAN}----------------------------------------${NC}"
-        echo -e "${WHITE}Base URL    : $BASE_URL${NC}"
-        echo -e "${GRAY}Auth Token  : ${TOKEN:0:12}...${NC}"
-        echo -e "${GREEN}  Sonnet (Default): ${SONNET:-N/A}${NC}"
-        echo -e "${WHITE}  Haiku           : ${HAIKU:-N/A}${NC}"
-        echo -e "${WHITE}  Opus            : ${OPUS:-N/A}${NC}"
-    elif [[ "$BASE_URL" == *openrouter* ]]; then
-        echo -e "\n${CYAN}[PROVIDER] OpenRouter${NC}"
-        echo -e "${CYAN}----------------------------------------${NC}"
-        echo -e "${WHITE}Base URL    : $BASE_URL${NC}"
-        echo -e "${GRAY}Auth Token  : ${TOKEN:0:12}...${NC}"
-        echo -e "${GREEN}  Sonnet (Default): ${SONNET:-N/A}${NC}"
-        echo -e "${WHITE}  Haiku           : ${HAIKU:-N/A}${NC}"
-        echo -e "${WHITE}  Opus            : ${OPUS:-N/A}${NC}"
+    local name label idx
+    name=$(current_provider)
+    if idx=$(provider_index "$name"); then
+        label="${PROVIDER_LABELS[$idx]}"
     else
-        echo -e "\n${GREEN}[PROVIDER] Claude Original (Anthropic)${NC}"
-        echo -e "${CYAN}----------------------------------------${NC}"
-        echo -e "${WHITE}Base URL    : Default (api.anthropic.com)${NC}"
-        echo -e "${GRAY}Auth Token  : ${TOKEN:0:15}...${NC}"
-        [ -n "$SONNET" ] && echo -e "${GREEN}  Sonnet (Default): $SONNET${NC}"
+        label="Unknown"
     fi
+
+    echo -e "\n${YELLOW}[PROVIDER]${NC} ${WHITE}$label${NC}"
+    echo -e "${CYAN}----------------------------------------${NC}"
+    if [ -n "$BASE_URL" ]; then
+        echo -e "${WHITE}Base URL    : $BASE_URL${NC}"
+    else
+        echo -e "${WHITE}Base URL    : Default (api.anthropic.com)${NC}"
+    fi
+    echo -e "${GRAY}Auth Token  : ${TOKEN:0:12}...${NC}"
+    [ -n "$SONNET" ] && echo -e "${GREEN}  Sonnet (Default): $SONNET${NC}"
+    [ -n "$HAIKU" ]  && echo -e "${WHITE}  Haiku           : $HAIKU${NC}"
+    [ -n "$OPUS" ]   && echo -e "${WHITE}  Opus            : $OPUS${NC}"
 
     local bk_count
     bk_count=$(find "$BACKUP_DIR" -maxdepth 1 -name 'settings_*.json' 2>/dev/null | wc -l)
@@ -130,21 +161,14 @@ switch_provider() {
     local provider="$1"
     local fast="${2:-}"
 
-    local provider_name template
-    case "$provider" in
-        anthropic)
-            provider_name="Claude Original (Anthropic)"
-            template="$CLAUDE_DIR/settings-anthropic.json"
-            ;;
-        openrouter)
-            provider_name="OpenRouter"
-            template="$CLAUDE_DIR/settings-openrouter.json"
-            ;;
-        zai|*)
-            provider_name="Z.AI (GLM)"
-            template="$CLAUDE_DIR/settings-zai.json"
-            ;;
-    esac
+    local idx
+    if ! idx=$(provider_index "$provider"); then
+        echo -e "${RED}[ERROR] Unknown provider: $provider${NC}"
+        echo -e "${YELLOW}Known: ${PROVIDER_NAMES[*]}${NC}"
+        return 1
+    fi
+    local provider_name="${PROVIDER_LABELS[$idx]}"
+    local template="$CLAUDE_DIR/settings-$provider.json"
 
     if [ ! -f "$template" ]; then
         echo -e "${RED}[ERROR] Template not found: $template${NC}"
@@ -249,62 +273,40 @@ setup_wizard() {
     echo -e "${GRAY}(Tokens are hidden as you type.)${NC}"
     echo ""
 
-    echo -e "${YELLOW}[1/3] Z.AI (GLM) token${NC}"
-    echo -e "${GRAY}  https://z.ai/manage-apikey/apikey-list${NC}"
-    local zai_token=""
-    read -r -s -p "  Z.AI token: " zai_token
-    echo
-    if [ -n "$zai_token" ]; then
-        printf '%s' "$zai_token" | set_token "$CLAUDE_DIR/settings-zai.json"
-        echo -e "  ${GREEN}[OK] Z.AI token saved${NC}"
-    else
-        echo -e "  ${GRAY}[skip]${NC}"
-    fi
-    unset zai_token
-    echo ""
+    local total=${#PROVIDER_NAMES[@]}
+    local i name label url token
+    for i in "${!PROVIDER_NAMES[@]}"; do
+        name="${PROVIDER_NAMES[$i]}"
+        label="${PROVIDER_LABELS[$i]}"
+        url="${PROVIDER_URLS[$i]}"
+        echo -e "${YELLOW}[$((i+1))/$((total+1))] $label${NC}"
+        echo -e "${GRAY}  $url${NC}"
+        token=""
+        read -r -s -p "  Token: " token
+        echo
+        if [ -n "$token" ]; then
+            printf '%s' "$token" | set_token "$CLAUDE_DIR/settings-$name.json"
+            echo -e "  ${GREEN}[OK] $label token saved${NC}"
+        else
+            echo -e "  ${GRAY}[skip]${NC}"
+        fi
+        unset token
+        echo ""
+    done
 
-    echo -e "${YELLOW}[2/4] Anthropic token${NC}"
-    echo -e "${GRAY}  https://console.anthropic.com/settings/keys${NC}"
-    local anth_token=""
-    read -r -s -p "  Anthropic token: " anth_token
-    echo
-    if [ -n "$anth_token" ]; then
-        printf '%s' "$anth_token" | set_token "$CLAUDE_DIR/settings-anthropic.json"
-        echo -e "  ${GREEN}[OK] Anthropic token saved${NC}"
-    else
-        echo -e "  ${GRAY}[skip]${NC}"
-    fi
-    unset anth_token
-    echo ""
-
-    echo -e "${YELLOW}[3/4] OpenRouter token${NC}"
-    echo -e "${GRAY}  https://openrouter.ai/keys${NC}"
-    local or_token=""
-    read -r -s -p "  OpenRouter token: " or_token
-    echo
-    if [ -n "$or_token" ]; then
-        printf '%s' "$or_token" | set_token "$CLAUDE_DIR/settings-openrouter.json"
-        echo -e "  ${GREEN}[OK] OpenRouter token saved${NC}"
-    else
-        echo -e "  ${GRAY}[skip]${NC}"
-    fi
-    unset or_token
-    echo ""
-
-    echo -e "${YELLOW}[4/4] Which provider to start with?${NC}"
-    echo -e "  ${WHITE}1)${NC} Z.AI (GLM)"
-    echo -e "  ${WHITE}2)${NC} Anthropic (Claude)"
-    echo -e "  ${WHITE}3)${NC} OpenRouter"
-    echo -e "  ${WHITE}s)${NC} Skip"
+    echo -e "${YELLOW}[$((total+1))/$((total+1))] Which provider to start with?${NC}"
+    for i in "${!PROVIDER_NAMES[@]}"; do
+        echo -e "  ${WHITE}$((i+1))${NC}) ${PROVIDER_LABELS[$i]}"
+    done
+    echo -e "  ${WHITE}s${NC}) Skip"
     local pick=""
     read -r -n 1 -p "  Choose: " pick
     echo
-    case "$pick" in
-        1) switch_provider zai fast ;;
-        2) switch_provider anthropic fast ;;
-        3) switch_provider openrouter fast ;;
-        *) echo -e "  ${GRAY}[skip]${NC}" ;;
-    esac
+    if [[ "$pick" =~ ^[0-9]+$ ]] && [ "$pick" -ge 1 ] && [ "$pick" -le "$total" ]; then
+        switch_provider "${PROVIDER_NAMES[$((pick-1))]}" fast
+    else
+        echo -e "  ${GRAY}[skip]${NC}"
+    fi
 
     echo ""
     echo -e "${GREEN}[DONE] Setup complete! Restart Claude Code.${NC}"
@@ -323,35 +325,41 @@ interactive_menu() {
         echo -e "${CYAN}========================================${NC}"
         echo -e "${WHITE}  CLAUDE CODE PROVIDER SWITCHER  ${GRAY}v$VERSION${NC}"
         echo -e "${CYAN}========================================${NC}"
-        case "$current" in
-            zai)        echo -e "  Current: ${YELLOW}Z.AI (GLM)${NC}" ;;
-            anthropic)  echo -e "  Current: ${GREEN}Claude (Anthropic)${NC}" ;;
-            openrouter) echo -e "  Current: ${CYAN}OpenRouter${NC}" ;;
-            *)          echo -e "  Current: ${RED}not configured${NC} ${GRAY}(run setup)${NC}" ;;
-        esac
+        local idx label
+        if idx=$(provider_index "$current"); then
+            label="${PROVIDER_LABELS[$idx]}"
+            echo -e "  Current: ${GREEN}$label${NC}"
+        else
+            echo -e "  Current: ${RED}not configured${NC} ${GRAY}(run setup)${NC}"
+        fi
         echo -e "${CYAN}========================================${NC}"
         echo ""
-        echo -e "  ${WHITE}1)${NC} Switch to ${YELLOW}Z.AI (GLM)${NC}"
-        echo -e "  ${WHITE}2)${NC} Switch to ${GREEN}Claude (Anthropic)${NC}"
-        echo -e "  ${WHITE}3)${NC} Switch to ${CYAN}OpenRouter${NC}"
-        echo -e "  ${WHITE}4)${NC} Show full status"
-        echo -e "  ${WHITE}5)${NC} Restore a backup"
-        echo -e "  ${WHITE}s)${NC} ${CYAN}Run setup wizard${NC}"
-        echo -e "  ${WHITE}q)${NC} Quit"
+        local i
+        for i in "${!PROVIDER_NAMES[@]}"; do
+            echo -e "  ${WHITE}$((i+1))${NC}) Switch to ${PROVIDER_LABELS[$i]}"
+        done
+        echo -e "  ${WHITE}t${NC}) Show full s${WHITE}t${NC}atus"
+        echo -e "  ${WHITE}b${NC}) Restore a ${WHITE}b${NC}ackup"
+        echo -e "  ${WHITE}w${NC}) Run setup ${CYAN}w${NC}izard"
+        echo -e "  ${WHITE}q${NC}) Quit"
         echo ""
         choice=""
         read -r -n 1 -p "Choose: " choice
         echo
-        case "$choice" in
-            1) switch_provider zai fast; current="zai"; read -r -p "Press Enter..." _ ;;
-            2) switch_provider anthropic fast; current="anthropic"; read -r -p "Press Enter..." _ ;;
-            3) switch_provider openrouter fast; current="openrouter"; read -r -p "Press Enter..." _ ;;
-            4) show_status; read -r -p "Press Enter..." _ ;;
-            5) restore_backup; current=$(current_provider); read -r -p "Press Enter..." _ ;;
-            s|S) setup_wizard; current=$(current_provider); read -r -p "Press Enter..." _ ;;
-            q|Q) echo -e "${CYAN}Bye!${NC}"; exit 0 ;;
-            *) echo -e "${RED}Invalid choice${NC}"; sleep 1 ;;
-        esac
+        if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#PROVIDER_NAMES[@]}" ]; then
+            local picked="${PROVIDER_NAMES[$((choice-1))]}"
+            switch_provider "$picked" fast
+            current="$picked"
+            read -r -p "Press Enter..." _
+        else
+            case "$choice" in
+                t|T) show_status; read -r -p "Press Enter..." _ ;;
+                b|B) restore_backup; current=$(current_provider); read -r -p "Press Enter..." _ ;;
+                w|W) setup_wizard; current=$(current_provider); read -r -p "Press Enter..." _ ;;
+                q|Q) echo -e "${CYAN}Bye!${NC}"; exit 0 ;;
+                *) echo -e "${RED}Invalid choice${NC}"; sleep 1 ;;
+            esac
+        fi
     done
 }
 
@@ -364,9 +372,10 @@ show_help() {
     echo -e "${YELLOW}Usage:${NC}"
     echo "  cm                    Open interactive menu"
     echo "  cm setup              Run setup wizard (enter tokens)"
-    echo "  cm zai [fast]         Switch to Z.AI (GLM)"
-    echo "  cm anthropic [fast]   Switch to Anthropic (Claude)"
-    echo "  cm openrouter [fast]  Switch to OpenRouter"
+    local i
+    for i in "${!PROVIDER_NAMES[@]}"; do
+        printf "  cm %-16s Switch to %s\n" "${PROVIDER_NAMES[$i]} [fast]" "${PROVIDER_LABELS[$i]}"
+    done
     echo "  cm status             Show current provider"
     echo "  cm restore            Restore from backup"
     echo "  cm version            Show version"
@@ -375,17 +384,29 @@ show_help() {
 }
 
 main() {
-    case "${1:-menu}" in
-        menu|"")              interactive_menu ;;
-        check|status)         show_status ;;
-        anthropic|claude)     switch_provider anthropic "${2:-}" ;;
-        zai|z)                switch_provider zai "${2:-}" ;;
-        openrouter|or)        switch_provider openrouter "${2:-}" ;;
-        restore)              restore_backup ;;
-        setup|wizard)         setup_wizard ;;
-        version|-v|--version) echo "claude-switcher v$VERSION" ;;
-        help|--help|-h|*)     show_help ;;
+    local cmd="${1:-menu}"
+    case "$cmd" in
+        menu|"")              interactive_menu; return ;;
+        check|status)         show_status; return ;;
+        restore)              restore_backup; return ;;
+        setup|wizard)         setup_wizard; return ;;
+        version|-v|--version) echo "claude-switcher v$VERSION"; return ;;
+        help|--help|-h)       show_help; return ;;
     esac
+    # Aliases for legacy / convenience
+    case "$cmd" in
+        claude) cmd="anthropic" ;;
+        z)      cmd="zai" ;;
+        or)     cmd="openrouter" ;;
+    esac
+    # If it's a known provider, switch to it; otherwise error + help
+    if provider_index "$cmd" >/dev/null; then
+        switch_provider "$cmd" "${2:-}"
+    else
+        echo -e "${RED}[ERROR] Unknown command: $cmd${NC}" >&2
+        show_help
+        return 1
+    fi
 }
 
 # Only run main when executed directly (not sourced — lets tests source the file)
