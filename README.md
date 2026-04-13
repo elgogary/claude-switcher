@@ -198,6 +198,11 @@ rm ~/.claude/claude-manager.sh ~/.claude/settings-zai.json ~/.claude/settings-an
 
 ## Changelog
 
+### v1.7.3 (2026-04-13)
+- **Find Git even when it's not on PATH** — the PowerShell installer now looks for `bash.exe` in 4 standard Git install locations (`Program Files\Git\bin`, `Program Files\Git\cmd`, `Program Files (x86)\Git\bin`, `%LOCALAPPDATA%\Programs\Git\bin`) before giving up. Fixes the common case where a user installed Git with "Use Git from Git Bash only" and `bash.exe` isn't on the system PATH.
+- **Persist Git's bin dir on user PATH** — if Git was found in a fallback location, its parent dir is added to the Windows user PATH so `cm.cmd` / `cm.ps1` can find `bash.exe` in future sessions.
+- **Ignore winget "already installed" exit code** — winget returns non-zero when the package is already latest, which is success for us. Previous version treated this as failure and died.
+
 ### v1.7.2 (2026-04-13)
 - **Auto-install Git for Windows via winget** — if the PowerShell installer detects `bash.exe` is missing but `winget` is available, it offers to install Git for Windows automatically (`winget install --id Git.Git -e --source winget`). After install, PATH is refreshed in the current session so the claude-switcher install continues without a reopen.
 - Better error message when winget isn't available — shows both the winget one-liner AND the manual download link side by side.

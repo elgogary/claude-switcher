@@ -22,7 +22,29 @@ Info "[claude-switcher] Installing for Windows..."
 
 # Dependency check — bash.exe (from Git for Windows) is required because
 # claude-manager.sh is a bash script. We only use PowerShell to install.
+
+# First try: is bash already on PATH?
 $bashCmd = Get-Command bash -ErrorAction SilentlyContinue
+
+# Second try: Git might be installed but not on PATH (user picked the wrong
+# PATH option during Git setup). Look in the standard Git install locations.
+if (-not $bashCmd) {
+    $knownPaths = @(
+        "$env:ProgramFiles\Git\bin\bash.exe",
+        "$env:ProgramFiles\Git\cmd\bash.exe",
+        "${env:ProgramFiles(x86)}\Git\bin\bash.exe",
+        "$env:LOCALAPPDATA\Programs\Git\bin\bash.exe"
+    )
+    foreach ($p in $knownPaths) {
+        if (Test-Path $p) {
+            Warn "  Found Git Bash at $p (not on PATH — adding to current session)"
+            $env:PATH = "$env:PATH;$(Split-Path $p -Parent)"
+            $bashCmd = Get-Command bash -ErrorAction SilentlyContinue
+            if ($bashCmd) { break }
+        }
+    }
+}
+
 if (-not $bashCmd) {
     $wingetCmd = Get-Command winget -ErrorAction SilentlyContinue
     if ($wingetCmd) {
@@ -35,26 +57,57 @@ if (-not $bashCmd) {
         if ($resp -eq '' -or $resp -match '^[Yy]') {
             Info ""
             Info "Installing Git for Windows via winget (1-2 min)..."
-            winget install --id Git.Git -e --source winget --accept-source-agreements --accept-package-agreements
-            if ($LASTEXITCODE -ne 0) {
-                Die @"
+            # Don't check $LASTEXITCODE — winget returns non-zero when the package
+            # is already installed up-to-date, which is NOT a failure for us.
+            # We just need bash.exe to be findable after this runs.
+            winget install --id Git.Git -e --source winget --accept-source-agreements --accept-package-agreements 2>&1 | Out-Host
 
-winget install failed. Please install Git for Windows manually:
-  https://git-scm.com/download/win
-
-During setup, pick 'Git from the command line and also from 3rd-party software'
-(the middle option). Then open a NEW PowerShell window and re-run this installer.
-"@
-            }
             # Refresh PATH so bash.exe becomes visible in this session
             $env:PATH = [Environment]::GetEnvironmentVariable('PATH','Machine') + ';' + [Environment]::GetEnvironmentVariable('PATH','User')
-            Ok ""
-            Ok "  Git for Windows installed. Continuing claude-switcher install..."
-            Ok ""
+
+            # Re-check PATH first, then known install locations
             $bashCmd = Get-Command bash -ErrorAction SilentlyContinue
             if (-not $bashCmd) {
-                Die "bash.exe still not found after Git install. Close PowerShell, open a new window, and re-run this installer."
+                $knownPaths = @(
+                    "$env:ProgramFiles\Git\bin\bash.exe",
+                    "$env:ProgramFiles\Git\cmd\bash.exe",
+                    "${env:ProgramFiles(x86)}\Git\bin\bash.exe",
+                    "$env:LOCALAPPDATA\Programs\Git\bin\bash.exe"
+                )
+                foreach ($p in $knownPaths) {
+                    if (Test-Path $p) {
+                        Warn "  Found Git Bash at $p (not on PATH — adding to current session)"
+                        $env:PATH = "$env:PATH;$(Split-Path $p -Parent)"
+                        $bashCmd = Get-Command bash -ErrorAction SilentlyContinue
+                        if ($bashCmd) { break }
+                    }
+                }
             }
+
+            if (-not $bashCmd) {
+                Die @"
+
+Git appears to be installed, but bash.exe is still not findable.
+
+This usually means Git was installed with the 'Use Git from Git Bash only'
+PATH option. Fix:
+  1. Open 'Add or remove programs' in Windows Settings
+  2. Find 'Git' and click 'Modify'
+  3. When asked about PATH, pick the MIDDLE option:
+     'Git from the command line and also from 3rd-party software'
+  4. Finish the reinstall
+  5. Close this PowerShell window and open a new one
+  6. Re-run the claude-switcher installer
+
+OR manually add Git's bin directory to PATH in this session:
+  `$env:PATH += ';C:\Program Files\Git\bin'
+"@
+            }
+
+            Ok ""
+            Ok "  Git found: $($bashCmd.Source)"
+            Ok "  Continuing claude-switcher install..."
+            Ok ""
         } else {
             Die "Installation cancelled. Install Git for Windows and try again."
         }
@@ -141,6 +194,22 @@ if (-not ($userPath -and $userPath -like "*$BinDir*")) {
     Ok "  [ok] added $BinDir to Windows user PATH"
 } else {
     Ok "  [ok] $BinDir already on user PATH"
+}
+
+# Also make sure Git's bin dir is on the USER PATH persistently, so 'cm'
+# can find 'bash.exe' next time the user opens a shell. If we found bash
+# in a fallback location above, its parent dir might only be on this
+# session's PATH.
+$bashDir = Split-Path $bashCmd.Source -Parent
+if ($bashDir -and ($userPath -notlike "*$bashDir*") -and (-not ($env:PATH -replace ';','|' | Select-String $bashDir -SimpleMatch))) {
+    # already exists on Machine PATH? skip — don't duplicate
+    $machinePath = [Environment]::GetEnvironmentVariable('PATH','Machine')
+    if ($machinePath -notlike "*$bashDir*") {
+        $up2 = [Environment]::GetEnvironmentVariable('PATH','User')
+        $new2 = if ($up2) { $up2.TrimEnd(';') + ';' + $bashDir } else { $bashDir }
+        [Environment]::SetEnvironmentVariable('PATH', $new2, 'User')
+        Ok "  [ok] added $bashDir to Windows user PATH (so cm.cmd can find bash.exe)"
+    }
 }
 
 # Refresh current session PATH so `cm` works IMMEDIATELY — no reopen needed
