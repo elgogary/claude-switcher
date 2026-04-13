@@ -198,6 +198,11 @@ rm ~/.claude/claude-manager.sh ~/.claude/settings-zai.json ~/.claude/settings-an
 
 ## Changelog
 
+### v1.7.2 (2026-04-13)
+- **Auto-install Git for Windows via winget** — if the PowerShell installer detects `bash.exe` is missing but `winget` is available, it offers to install Git for Windows automatically (`winget install --id Git.Git -e --source winget`). After install, PATH is refreshed in the current session so the claude-switcher install continues without a reopen.
+- Better error message when winget isn't available — shows both the winget one-liner AND the manual download link side by side.
+- Addresses user report: friend ran the installer without Git, got a generic "install Git" error. Now the installer can do it for them.
+
 ### v1.7.1 (2026-04-13)
 - **`install.bat`** — double-clickable Windows installer. Users can download one file, double-click it in File Explorer, and watch the install complete. No terminal required.
 - `install.bat` also runs from any terminal (cmd / PowerShell / Git Bash / Windows Terminal) if the user prefers typing.

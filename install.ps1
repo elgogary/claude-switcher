@@ -24,16 +24,60 @@ Info "[claude-switcher] Installing for Windows..."
 # claude-manager.sh is a bash script. We only use PowerShell to install.
 $bashCmd = Get-Command bash -ErrorAction SilentlyContinue
 if (-not $bashCmd) {
-    Die @"
+    $wingetCmd = Get-Command winget -ErrorAction SilentlyContinue
+    if ($wingetCmd) {
+        Warn ""
+        Warn "bash.exe not found — Git for Windows is required."
+        Warn ""
+        Info "Good news: winget is available. Want to auto-install Git for Windows now?"
+        Info "This will run:  winget install --id Git.Git -e --source winget"
+        $resp = Read-Host "Install Git for Windows automatically? [Y/n]"
+        if ($resp -eq '' -or $resp -match '^[Yy]') {
+            Info ""
+            Info "Installing Git for Windows via winget (1-2 min)..."
+            winget install --id Git.Git -e --source winget --accept-source-agreements --accept-package-agreements
+            if ($LASTEXITCODE -ne 0) {
+                Die @"
 
-bash.exe not found on PATH.
-
-claude-switcher needs Git for Windows (it ships bash.exe + curl + tar).
-Install it from: https://git-scm.com/download/win
+winget install failed. Please install Git for Windows manually:
+  https://git-scm.com/download/win
 
 During setup, pick 'Git from the command line and also from 3rd-party software'
 (the middle option). Then open a NEW PowerShell window and re-run this installer.
 "@
+            }
+            # Refresh PATH so bash.exe becomes visible in this session
+            $env:PATH = [Environment]::GetEnvironmentVariable('PATH','Machine') + ';' + [Environment]::GetEnvironmentVariable('PATH','User')
+            Ok ""
+            Ok "  Git for Windows installed. Continuing claude-switcher install..."
+            Ok ""
+            $bashCmd = Get-Command bash -ErrorAction SilentlyContinue
+            if (-not $bashCmd) {
+                Die "bash.exe still not found after Git install. Close PowerShell, open a new window, and re-run this installer."
+            }
+        } else {
+            Die "Installation cancelled. Install Git for Windows and try again."
+        }
+    } else {
+        Die @"
+
+bash.exe not found on PATH.
+
+claude-switcher needs Git for Windows (it ships bash.exe + curl + tar).
+
+Install it ONE of these ways:
+
+  1. winget (if you have Windows 10 1809+ or Windows 11):
+       winget install --id Git.Git -e --source winget
+
+  2. Manual download:
+       https://git-scm.com/download/win
+     During setup, pick 'Git from the command line and also from 3rd-party software'
+     (the middle option).
+
+Then close PowerShell, open a NEW window, and re-run this installer.
+"@
+    }
 }
 Ok "  Git Bash found: $($bashCmd.Source)"
 
