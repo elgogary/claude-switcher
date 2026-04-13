@@ -52,14 +52,12 @@ fi
 echo ""
 echo -e "${GREEN}[OK] Installed!${NC}"
 echo ""
-echo "Next steps:"
-echo "  1. Edit your tokens:"
-echo "     nano ~/.claude/settings-zai.json        # add Z.AI token"
-echo "     nano ~/.claude/settings-anthropic.json  # add Anthropic token"
-echo ""
-echo "  2. Switch providers:"
-echo "     cm zai          # switch to Z.AI (GLM)"
-echo "     cm anthropic    # switch to Claude (Anthropic)"
-echo "     cm status       # show current provider"
-echo ""
-echo "  3. Restart Claude Code after switching."
+
+# Run the setup wizard automatically (only if running interactively)
+if [ -t 0 ] && [ -t 1 ]; then
+    echo -e "${CYAN}Starting setup wizard...${NC}"
+    sleep 1
+    bash "$CLAUDE_DIR/claude-manager.sh" setup
+else
+    echo "Next: run ${CYAN}cm setup${NC} to enter your tokens, or ${CYAN}cm${NC} for the menu."
+fi

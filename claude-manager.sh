@@ -164,6 +164,78 @@ restore_backup() {
     fi
 }
 
+set_token() {
+    local file="$1"
+    local token="$2"
+    python3 - "$file" "$token" <<'PY'
+import json, sys
+path, token = sys.argv[1], sys.argv[2]
+try:
+    with open(path) as f:
+        data = json.load(f)
+except FileNotFoundError:
+    data = {"env": {}}
+data.setdefault("env", {})["ANTHROPIC_AUTH_TOKEN"] = token
+with open(path, "w") as f:
+    json.dump(data, f, indent=2)
+PY
+}
+
+setup_wizard() {
+    clear
+    echo -e "${CYAN}========================================${NC}"
+    echo -e "${WHITE}  CLAUDE SWITCHER - SETUP WIZARD${NC}"
+    echo -e "${CYAN}========================================${NC}"
+    echo ""
+    echo -e "This wizard will configure your API tokens."
+    echo -e "Press ${YELLOW}Enter${NC} to skip any provider you don't use."
+    echo ""
+
+    # Z.AI token
+    echo -e "${YELLOW}[1/3] Z.AI (GLM) token${NC}"
+    echo -e "${GRAY}Get one at: https://z.ai/manage-apikey/apikey-list${NC}"
+    read -p "Z.AI token: " zai_token
+    if [ -n "$zai_token" ]; then
+        set_token "$CLAUDE_DIR/settings-zai.json" "$zai_token"
+        echo -e "${GREEN}[OK] Z.AI token saved${NC}"
+    else
+        echo -e "${GRAY}[skip]${NC}"
+    fi
+    echo ""
+
+    # Anthropic token
+    echo -e "${YELLOW}[2/3] Anthropic token${NC}"
+    echo -e "${GRAY}Get one at: https://console.anthropic.com/settings/keys${NC}"
+    read -p "Anthropic token: " anth_token
+    if [ -n "$anth_token" ]; then
+        set_token "$CLAUDE_DIR/settings-anthropic.json" "$anth_token"
+        echo -e "${GREEN}[OK] Anthropic token saved${NC}"
+    else
+        echo -e "${GRAY}[skip]${NC}"
+    fi
+    echo ""
+
+    # Pick starting provider
+    echo -e "${YELLOW}[3/3] Which provider to start with?${NC}"
+    echo -e "  ${WHITE}1)${NC} Z.AI (GLM)"
+    echo -e "  ${WHITE}2)${NC} Anthropic (Claude)"
+    echo -e "  ${WHITE}s)${NC} Skip"
+    read -n 1 -p "Choose: " pick
+    echo
+    case "$pick" in
+        1) switch_provider zai fast ;;
+        2) switch_provider anthropic fast ;;
+        *) echo -e "${GRAY}[skip]${NC}" ;;
+    esac
+
+    echo ""
+    echo -e "${GREEN}========================================${NC}"
+    echo -e "${GREEN}  Setup complete! Restart Claude Code.${NC}"
+    echo -e "${GREEN}========================================${NC}"
+    echo -e "Run ${CYAN}cm${NC} anytime to switch providers."
+    echo ""
+}
+
 interactive_menu() {
     while true; do
         clear
@@ -187,8 +259,9 @@ interactive_menu() {
         echo -e "  ${WHITE}2)${NC} Switch to ${GREEN}Claude (Anthropic)${NC}"
         echo -e "  ${WHITE}3)${NC} Show full status"
         echo -e "  ${WHITE}4)${NC} Restore a backup"
-        echo -e "  ${WHITE}5)${NC} Edit Z.AI token"
-        echo -e "  ${WHITE}6)${NC} Edit Anthropic token"
+        echo -e "  ${WHITE}5)${NC} Edit Z.AI token (in editor)"
+        echo -e "  ${WHITE}6)${NC} Edit Anthropic token (in editor)"
+        echo -e "  ${WHITE}s)${NC} ${CYAN}Run setup wizard${NC}"
         echo -e "  ${WHITE}q)${NC} Quit"
         echo ""
         read -n 1 -p "Choose: " choice
@@ -200,6 +273,7 @@ interactive_menu() {
             4) restore_backup; read -p "Press Enter..." ;;
             5) ${EDITOR:-nano} "$CLAUDE_DIR/settings-zai.json" ;;
             6) ${EDITOR:-nano} "$CLAUDE_DIR/settings-anthropic.json" ;;
+            s|S) setup_wizard; read -p "Press Enter..." ;;
             q|Q) echo -e "${CYAN}Bye!${NC}"; exit 0 ;;
             *) echo -e "${RED}Invalid choice${NC}"; sleep 1 ;;
         esac
@@ -222,6 +296,9 @@ case "${1:-menu}" in
         ;;
     restore)
         restore_backup
+        ;;
+    setup|wizard)
+        setup_wizard
         ;;
     help|*)
         echo -e "\n${CYAN}========================================${NC}"
