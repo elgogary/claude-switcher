@@ -39,6 +39,8 @@ tar -xzf "$tmpdir/release.tar.gz" -C "$tmpdir" \
 
 src="$tmpdir/claude-switcher-$BRANCH"
 [ -f "$src/claude-manager.sh" ]            || die "release missing claude-manager.sh"
+[ -f "$src/cm.cmd" ]                       || die "release missing cm.cmd"
+[ -f "$src/cm.ps1" ]                       || die "release missing cm.ps1"
 # Verify all expected template files exist in the release
 for t in zai anthropic openrouter deepseek kimi custom; do
     [ -f "$src/templates/settings-$t.json" ] || die "release missing templates/settings-$t.json"
@@ -67,7 +69,7 @@ for t in zai anthropic openrouter deepseek kimi custom; do
     fi
 done
 
-# cm shortcut in ~/.local/bin
+# cm shortcut in ~/.local/bin (bash version — works on Linux/macOS/Git Bash/WSL)
 info "[4/4] Creating 'cm' shortcut"
 cat > "$BIN_DIR/cm" <<'EOF'
 #!/usr/bin/env bash
@@ -75,12 +77,39 @@ exec bash "$HOME/.claude/claude-manager.sh" "$@"
 EOF
 chmod +x "$BIN_DIR/cm"
 
-# PATH check
+# Windows support: also install cm.cmd + cm.ps1 so 'cm' works from
+# PowerShell and cmd.exe, not just Git Bash
+is_windows=""
+case "${OSTYPE:-}$(uname -s 2>/dev/null || true)" in
+    *msys*|*MINGW*|*MSYS*|*CYGWIN*|*cygwin*|*mingw*) is_windows=1 ;;
+esac
+if [ -n "$is_windows" ]; then
+    info "      (Windows detected — also installing cm.cmd + cm.ps1)"
+    install -m 755 "$src/cm.cmd" "$BIN_DIR/cm.cmd"
+    install -m 755 "$src/cm.ps1" "$BIN_DIR/cm.ps1"
+fi
+
+# PATH check — bash-side
 if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
     warn ""
     warn "Note: $BIN_DIR is not in PATH"
     warn "Add this to ~/.bashrc or ~/.zshrc:"
     warn "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+fi
+
+# Windows PATH hint — tell the user how to add BIN_DIR to their Windows user PATH
+# so cm.cmd / cm.ps1 are found from PowerShell and cmd.exe
+if [ -n "$is_windows" ]; then
+    if command -v cygpath >/dev/null 2>&1; then
+        win_bin=$(cygpath -w "$BIN_DIR")
+    else
+        win_bin="$BIN_DIR"
+    fi
+    warn ""
+    warn "Windows PATH setup (run ONCE in PowerShell, NOT as admin):"
+    warn "  [Environment]::SetEnvironmentVariable('PATH', [Environment]::GetEnvironmentVariable('PATH','User') + ';$win_bin', 'User')"
+    warn ""
+    warn "Then open a NEW PowerShell or cmd window and run: cm version"
 fi
 
 ok ""

@@ -105,6 +105,18 @@ The agent runs `cm deepseek fast && cm status`. Done.
 
 The installer fails fast with a clear error if any of these are missing.
 
+### Windows
+
+claude-switcher works on Windows via **Git for Windows** (which ships `bash`, `curl`, `tar`, and friends). Install Git from https://git-scm.com/download/win, then:
+
+1. Open **Git Bash** (not PowerShell — the installer is a bash script)
+2. Run the install command from the [Install](#install) section
+3. The installer auto-detects Windows and drops `cm.cmd` + `cm.ps1` wrappers next to the bash `cm` shim, so you can run `cm` from **PowerShell**, **cmd.exe**, or **Git Bash** — all three work the same
+
+After install, the installer prints a one-line PowerShell command to add `%USERPROFILE%\.local\bin` to your Windows user PATH. Run it once, open a new PowerShell window, and `cm` works everywhere.
+
+**WSL also works** — inside WSL, it's just Linux, no special handling needed.
+
 ## Usage
 
 ```bash
@@ -152,6 +164,11 @@ rm ~/.claude/claude-manager.sh ~/.claude/settings-zai.json ~/.claude/settings-an
 ```
 
 ## Changelog
+
+### v1.5.0 (2026-04-13)
+- **Windows support** — `cm` now works from PowerShell, cmd.exe, and Git Bash. The installer detects Windows (via `$OSTYPE`/`uname`) and drops `cm.cmd` + `cm.ps1` wrappers alongside the bash shim. Both wrappers forward to the same `claude-manager.sh` via Git Bash's `bash.exe`.
+- Installer prints a one-line PowerShell snippet to add `~/.local/bin` to the Windows user PATH.
+- Requires Git for Windows (for `bash.exe`) — installed by anyone who uses `git` on Windows.
 
 ### v1.4.0 (2026-04-13)
 - **Stupid mode** — `cm setup-quiet` reads tokens from `CM_*_TOKEN` env vars (one per provider) and writes them non-interactively. The installer auto-detects these env vars and runs quiet setup, so the entire install + configure flow becomes a single command an AI agent can run unattended.
