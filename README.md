@@ -35,6 +35,8 @@ The right model for a task is rarely the same as yesterday. Switching should tak
 
 ## Install
 
+### Option 1 — One command (manual)
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/elgogary/claude-switcher/main/install.sh | bash
 ```
@@ -46,6 +48,30 @@ cm setup
 ```
 
 That's it — `cm` is now available in your terminal.
+
+### Option 2 — Ask an AI agent to install it for you
+
+If you're already in **Claude Code**, **ChatGPT**, **Cursor**, **Codex**, or any other AI coding agent that can run shell commands, paste this prompt:
+
+> Install claude-switcher from https://github.com/elgogary/claude-switcher.
+> 1. Run: `curl -fsSL https://raw.githubusercontent.com/elgogary/claude-switcher/main/install.sh | bash`
+> 2. Verify it installed by running `cm version` (should print `claude-switcher v1.3.x`).
+> 3. Tell me to run `cm setup` to enter my API tokens. Don't run setup yourself — it needs interactive input that only I can provide.
+> 4. After I confirm setup is done, show me how to switch providers with `cm zai`, `cm anthropic`, `cm openrouter`, `cm deepseek`, `cm kimi`, or `cm custom`.
+
+The agent will:
+- Run the install command
+- Verify it worked
+- Hand the wizard back to you (because token entry needs your hands on the keyboard — agents can't paste secrets they don't have)
+- Explain the next steps in your own language
+
+**Why the agent can't do step 3:** the setup wizard reads tokens from your terminal with hidden input (`read -s`). An agent can't see your screen and shouldn't be storing your API keys anyway. So the agent installs the tool and you take 30 seconds to enter the tokens once.
+
+**After setup**, you can also ask the agent to switch providers for you:
+
+> Switch Claude Code to Z.AI (GLM) and confirm the switch worked.
+
+The agent will run `cm zai fast` and `cm status` to verify.
 
 ## Requirements
 
