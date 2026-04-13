@@ -113,7 +113,7 @@ claude-switcher works on Windows via **Git for Windows** (which ships `bash`, `c
 2. Run the install command from the [Install](#install) section
 3. The installer auto-detects Windows and drops `cm.cmd` + `cm.ps1` wrappers next to the bash `cm` shim, so you can run `cm` from **PowerShell**, **cmd.exe**, or **Git Bash** — all three work the same
 
-After install, the installer prints a one-line PowerShell command to add `%USERPROFILE%\.local\bin` to your Windows user PATH. Run it once, open a new PowerShell window, and `cm` works everywhere.
+The installer **auto-adds** `%USERPROFILE%\.local\bin` to your Windows user PATH via PowerShell's `[Environment]::SetEnvironmentVariable`. No manual step. Close Git Bash, open a fresh PowerShell or cmd.exe window, and `cm` just works.
 
 **WSL also works** — inside WSL, it's just Linux, no special handling needed.
 
@@ -164,6 +164,10 @@ rm ~/.claude/claude-manager.sh ~/.claude/settings-zai.json ~/.claude/settings-an
 ```
 
 ## Changelog
+
+### v1.6.0 (2026-04-13)
+- **Auto-add Windows PATH** — the installer now calls `powershell.exe` during install to append `~/.local/bin` to the Windows user PATH via `[Environment]::SetEnvironmentVariable('PATH', ..., 'User')`. Zero manual steps. Idempotent — checks if already present before appending.
+- Falls back to a printed one-liner if `powershell.exe` is unavailable.
 
 ### v1.5.0 (2026-04-13)
 - **Windows support** — `cm` now works from PowerShell, cmd.exe, and Git Bash. The installer detects Windows (via `$OSTYPE`/`uname`) and drops `cm.cmd` + `cm.ps1` wrappers alongside the bash shim. Both wrappers forward to the same `claude-manager.sh` via Git Bash's `bash.exe`.

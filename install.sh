@@ -97,19 +97,47 @@ if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
     warn "  export PATH=\"\$HOME/.local/bin:\$PATH\""
 fi
 
-# Windows PATH hint — tell the user how to add BIN_DIR to their Windows user PATH
-# so cm.cmd / cm.ps1 are found from PowerShell and cmd.exe
+# Windows: auto-add BIN_DIR to the Windows user PATH so cm.cmd / cm.ps1
+# are found from PowerShell and cmd.exe without any manual step.
 if [ -n "$is_windows" ]; then
     if command -v cygpath >/dev/null 2>&1; then
         win_bin=$(cygpath -w "$BIN_DIR")
     else
         win_bin="$BIN_DIR"
     fi
+
+    if command -v powershell.exe >/dev/null 2>&1; then
+        info "      (updating Windows user PATH...)"
+        # Write a small PS helper to a temp file so we avoid quoting hell.
+        # Bash expands $win_bin once into the script; \$vars are PS variables.
+        ps_script="$tmpdir/add_to_path.ps1"
+        cat > "$ps_script" <<PS
+\$target = '$win_bin'
+\$current = [Environment]::GetEnvironmentVariable('PATH', 'User')
+if (\$current -and \$current -like "*\$target*") {
+    Write-Host "  [ok] $win_bin already on Windows user PATH"
+    exit 0
+}
+if (\$current) {
+    \$new = \$current.TrimEnd(';') + ';' + \$target
+} else {
+    \$new = \$target
+}
+[Environment]::SetEnvironmentVariable('PATH', \$new, 'User')
+Write-Host "  [ok] added $win_bin to Windows user PATH"
+PS
+        if powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$ps_script" 2>&1; then
+            :
+        else
+            warn "  Could not update PATH automatically. Run this in PowerShell:"
+            warn "    [Environment]::SetEnvironmentVariable('PATH', [Environment]::GetEnvironmentVariable('PATH','User') + ';$win_bin', 'User')"
+        fi
+    else
+        warn "powershell.exe not found — add $win_bin to your user PATH manually."
+    fi
     warn ""
-    warn "Windows PATH setup (run ONCE in PowerShell, NOT as admin):"
-    warn "  [Environment]::SetEnvironmentVariable('PATH', [Environment]::GetEnvironmentVariable('PATH','User') + ';$win_bin', 'User')"
-    warn ""
-    warn "Then open a NEW PowerShell or cmd window and run: cm version"
+    warn "NOTE: Open a NEW PowerShell/cmd window for the PATH change to take effect."
+    warn "Then run: cm version"
 fi
 
 ok ""
