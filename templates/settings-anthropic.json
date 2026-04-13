@@ -1,0 +1,6 @@
+{
+  "env": {
+    "ANTHROPIC_AUTH_TOKEN": "YOUR_ANTHROPIC_TOKEN_HERE",
+    "API_TIMEOUT_MS": "3000000"
+  }
+}
