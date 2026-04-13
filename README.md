@@ -198,6 +198,9 @@ rm ~/.claude/claude-manager.sh ~/.claude/settings-zai.json ~/.claude/settings-an
 
 ## Changelog
 
+### v1.7.4 (2026-04-13)
+- **Bug fix** — when v1.7.3 found Git Bash at a fallback location (because it wasn't on PATH), it added the dir to the current session's `$env:PATH` and then used that as the "already persisted" check. Result: Git's bin dir was NEVER written to the registry, so `cm.cmd` failed with `'bash' is not recognized` after the installer exited. Now checks only the User and Machine registry PATH, ignoring the session path. Reported by a user whose friend installed Git with the "Use Git from Git Bash only" option.
+
 ### v1.7.3 (2026-04-13)
 - **Find Git even when it's not on PATH** — the PowerShell installer now looks for `bash.exe` in 4 standard Git install locations (`Program Files\Git\bin`, `Program Files\Git\cmd`, `Program Files (x86)\Git\bin`, `%LOCALAPPDATA%\Programs\Git\bin`) before giving up. Fixes the common case where a user installed Git with "Use Git from Git Bash only" and `bash.exe` isn't on the system PATH.
 - **Persist Git's bin dir on user PATH** — if Git was found in a fallback location, its parent dir is added to the Windows user PATH so `cm.cmd` / `cm.ps1` can find `bash.exe` in future sessions.

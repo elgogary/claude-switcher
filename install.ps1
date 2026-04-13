@@ -196,21 +196,28 @@ if (-not ($userPath -and $userPath -like "*$BinDir*")) {
     Ok "  [ok] $BinDir already on user PATH"
 }
 
-# Also make sure Git's bin dir is on the USER PATH persistently, so 'cm'
-# can find 'bash.exe' next time the user opens a shell. If we found bash
-# in a fallback location above, its parent dir might only be on this
-# session's PATH.
+# Also make sure Git's bin dir is on the USER PATH persistently, so 'cm.cmd'
+# can find 'bash.exe' next time the user opens a shell. If we found bash in
+# a fallback location above, it's only on this session's PATH — we need to
+# persist it to the registry.
+#
+# BUG FIX (v1.7.4): we only check USER and MACHINE registry PATH here, NOT
+# the current session $env:PATH. The session path may include a dir we
+# temporarily added earlier in this script, which wrongly made us think
+# the dir was already persisted.
 $bashDir = Split-Path $bashCmd.Source -Parent
-if ($bashDir -and ($userPath -notlike "*$bashDir*") -and (-not ($env:PATH -replace ';','|' | Select-String $bashDir -SimpleMatch))) {
-    # already exists on Machine PATH? skip — don't duplicate
-    $machinePath = [Environment]::GetEnvironmentVariable('PATH','Machine')
-    if ($machinePath -notlike "*$bashDir*") {
-        $up2 = [Environment]::GetEnvironmentVariable('PATH','User')
-        $new2 = if ($up2) { $up2.TrimEnd(';') + ';' + $bashDir } else { $bashDir }
-        [Environment]::SetEnvironmentVariable('PATH', $new2, 'User')
-        Ok "  [ok] added $bashDir to Windows user PATH (so cm.cmd can find bash.exe)"
-    }
+$machinePath = [Environment]::GetEnvironmentVariable('PATH','Machine')
+$userPathFresh = [Environment]::GetEnvironmentVariable('PATH','User')
+if ($bashDir -and ($userPathFresh -notlike "*$bashDir*") -and ($machinePath -notlike "*$bashDir*")) {
+    $new2 = if ($userPathFresh) { $userPathFresh.TrimEnd(';') + ';' + $bashDir } else { $bashDir }
+    [Environment]::SetEnvironmentVariable('PATH', $new2, 'User')
+    Ok "  [ok] added $bashDir to Windows user PATH (so cm.cmd can find bash.exe)"
+} else {
+    Ok "  [ok] $bashDir already on PATH"
 }
+
+# Re-refresh current session PATH with all changes
+$env:PATH = [Environment]::GetEnvironmentVariable('PATH','Machine') + ';' + [Environment]::GetEnvironmentVariable('PATH','User')
 
 # Refresh current session PATH so `cm` works IMMEDIATELY — no reopen needed
 $machinePath = [Environment]::GetEnvironmentVariable('PATH','Machine')
