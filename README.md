@@ -49,7 +49,7 @@ cm setup
 
 That's it — `cm` is now available in your terminal.
 
-### Option 2 — Ask an AI agent to install it (stupid mode)
+### Option 2 — Ask an AI agent to install it (agent mode)
 
 If you're already in **Claude Code**, **ChatGPT**, **Cursor**, **Codex**, or any other AI coding agent that can run shell commands, paste this prompt:
 
@@ -79,7 +79,7 @@ That's it. The agent asks for your tokens once, runs **one command**, and you're
 - The tokens go into `~/.claude/settings-*.json` on your local disk only — they're never sent anywhere claude-switcher controls.
 - If your agent runs in a container or remote box, the tokens land there, not on your laptop.
 
-### Option 3 — One command from your own terminal (also stupid mode)
+### Option 3 — One command from your own terminal (zero-touch)
 
 If you're not using an agent and want the full one-line install + setup, copy this into your terminal and replace the placeholders with your real tokens:
 
@@ -259,7 +259,7 @@ rm ~/.claude/claude-manager.sh ~/.claude/settings-zai.json ~/.claude/settings-an
 - Requires Git for Windows (for `bash.exe`) — installed by anyone who uses `git` on Windows.
 
 ### v1.4.0 (2026-04-13)
-- **Stupid mode** — `cm setup-quiet` reads tokens from `CM_*_TOKEN` env vars (one per provider) and writes them non-interactively. The installer auto-detects these env vars and runs quiet setup, so the entire install + configure flow becomes a single command an AI agent can run unattended.
+- **Agent mode** — `cm setup-quiet` reads tokens from `CM_*_TOKEN` env vars (one per provider) and writes them non-interactively. The installer auto-detects these env vars and runs quiet setup, so the entire install + configure flow becomes a single command an AI agent can run unattended.
 - **Agent-friendly install command** in README — paste-able prompt for Claude Code / ChatGPT / Cursor that asks the user for tokens once, runs one command, done.
 - **`CM_START`** env var to pick which provider to activate after non-interactive setup.
 - **`CM_CUSTOM_URL`** env var to set the custom provider's base URL (for litellm/ccr/Ollama proxies).

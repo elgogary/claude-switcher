@@ -145,7 +145,7 @@ ok "[OK] claude-switcher installed!"
 ok ""
 
 # Decide what to do next — 3 paths:
-#   1. Any CM_*_TOKEN env var is set → run setup-quiet (agent/stupid mode)
+#   1. Any CM_*_TOKEN env var is set → run setup-quiet (agent / zero-touch mode)
 #   2. Running interactively (TTY) → launch interactive wizard
 #   3. curl | bash with no TTY and no env vars → tell user what to do
 if [ -n "${CM_ZAI_TOKEN:-}${CM_ANTHROPIC_TOKEN:-}${CM_OPENROUTER_TOKEN:-}${CM_DEEPSEEK_TOKEN:-}${CM_KIMI_TOKEN:-}${CM_CUSTOM_TOKEN:-}" ]; then
