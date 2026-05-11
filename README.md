@@ -161,30 +161,37 @@ cm openrouter         # switch to OpenRouter
 cm deepseek           # switch to DeepSeek
 cm kimi               # switch to Moonshot Kimi
 cm custom             # switch to your custom proxy / router
-cm status             # show current provider
-cm restore            # restore from a backup
+cm last               # toggle back to the previous provider
+cm status             # show full provider details (models, context, cost, backups)
+cm qs                 # quick one-line status — no API ping, instant
+cm test [provider]    # ping the provider's API and validate the saved token
+cm restore            # restore from a backup (timestamped picker)
 cm version            # show version
 cm help               # show help
 ```
 
+Aliases: `cm claude` = `cm anthropic`, `cm z` = `cm zai`, `cm or` = `cm openrouter`.
+
 `cm zai fast` and `cm anthropic fast` skip the confirmation prompt.
 
-Restart Claude Code after switching.
+Restart Claude Code after switching. `cm` detects an active session and tells you to restart it (the running window keeps using the old credentials until then).
 
 ## How it works
 
-`claude-manager.sh` copies `~/.claude/settings-zai.json` or `~/.claude/settings-anthropic.json` over `~/.claude/settings.json`. Claude Code reads that file on startup to pick the API endpoint and model. Every switch creates a timestamped backup in `~/.claude/backups/` so you can always roll back.
+`claude-manager.sh` reads the template at `~/.claude/settings-<provider>.json` and **merges its `env` section** into `~/.claude/settings.json` — it does NOT overwrite the whole file. That means your `permissions`, `plugins`, `model`, hooks, and every other key are preserved across switches; only the API endpoint, auth token, and model defaults change. Every switch creates a timestamped backup in `~/.claude/backups/` so you can always roll back.
+
+Placeholder tokens (`YOUR_*_TOKEN_HERE`) and empty strings in the template are stripped during merge, so a half-configured template can't corrupt your live settings.
 
 ## Providers
 
-| Provider | Token URL | Default model | Notes |
-|---|---|---|---|
-| **Anthropic** | https://console.anthropic.com/settings/keys | `claude-3.5-sonnet` | The original. Highest quality, highest cost. |
-| **Z.AI (GLM)** | https://z.ai/manage-apikey/apikey-list | `glm-5.1` | Cheap, fast, native Anthropic-format endpoint. |
-| **OpenRouter** | https://openrouter.ai/keys | `anthropic/claude-3.5-sonnet` | Gateway to dozens of models — edit the template to pick `openai/gpt-4o`, `meta-llama/llama-3.1-405b`, etc. |
-| **DeepSeek** | https://platform.deepseek.com/api_keys | `deepseek-chat` / `deepseek-reasoner` | Native Anthropic endpoint at `api.deepseek.com/anthropic`. |
-| **Moonshot Kimi** | https://platform.moonshot.cn/console/api-keys | `kimi-k2-0905-preview` | Native Anthropic endpoint at `api.moonshot.cn/anthropic`. |
-| **Custom** | (your own) | (your own) | Blank template — edit `~/.claude/settings-custom.json` to point at any proxy/router (litellm, claude-code-router, Ollama via adapter, etc.). |
+| Provider | Token URL | Default model | Context | Cost / 1M tok | Notes |
+|---|---|---|---|---|---|
+| **Anthropic** | https://console.anthropic.com/settings/keys | `claude-sonnet-4` / `claude-haiku-4` | 200K | $3/$15 Sonnet, $15/$75 Opus | The original. Highest quality, highest cost. |
+| **Z.AI (GLM)** | https://z.ai/manage-apikey/apikey-list | `glm-5.1` / `glm-4.5-air` | 200K | $1.40 in / $4.40 out | Cheap, fast, native Anthropic-format endpoint. |
+| **OpenRouter** | https://openrouter.ai/keys | `anthropic/claude-3.5-sonnet` | varies | varies | Gateway to dozens of models — edit the template to pick `openai/gpt-4o`, `meta-llama/llama-3.1-405b`, etc. |
+| **DeepSeek** | https://platform.deepseek.com/api_keys | `deepseek-v4-pro` / `deepseek-v4-flash` | 1M | $0.41 in / $0.83 out | Native Anthropic endpoint at `api.deepseek.com/anthropic`. 1M context window. |
+| **Moonshot Kimi** | https://platform.moonshot.cn/console/api-keys | `kimi-k2-0905-preview` | 256K | $0.60 in / $2.50 out | Native Anthropic endpoint at `api.moonshot.cn/anthropic`. |
+| **Custom** | (your own) | (your own) | varies | varies | Blank template — edit `~/.claude/settings-custom.json` to point at any proxy/router (litellm, claude-code-router, Ollama via adapter, etc.). |
 
 ### Adding a new provider
 
@@ -197,6 +204,17 @@ rm ~/.claude/claude-manager.sh ~/.claude/settings-zai.json ~/.claude/settings-an
 ```
 
 ## Changelog
+
+### v1.9.0 (2026-05-11)
+- **Non-destructive switching** — `cm <provider>` now MERGES the template's `env` block into the existing `settings.json` instead of overwriting the whole file. Your `permissions`, `plugins`, `model`, hooks, and every other key survive a switch. Placeholder values (`YOUR_*_TOKEN_HERE`, empty strings) are stripped before merge so a half-configured template can't poison live settings.
+- **`cm last` / `cm back` / `cm prev`** — toggle back to the previous provider. Every switch records the prior provider to `~/.claude/.cm-last`, so flipping between Anthropic and Z.AI for one task is a single keystroke.
+- **`cm qs` / `cm quick`** — single-line instant status (no API ping). Shows provider, token prefix, context window, cost, and which provider you were on before. Designed for shell prompts and quick "what am I on?" checks.
+- **Models / Context / Cost in `cm status` and menu** — the full status display and the interactive menu now show each provider's default model, context window size, and cost per 1M tokens side by side. The registry has dedicated `PROVIDER_MODELS`, `PROVIDER_CTX`, and `PROVIDER_COST` arrays so adding a provider stays a single-row append.
+- **Active-session restart warning** — when switching, `cm` checks for environment markers (`CLAUDE_CODE`, `ANTHROPIC_API_KEY`, `TERM_PROGRAM`) and running `claude` processes. If detected, it tells you the current window still uses the old credentials and to open a new terminal tab or run `/restart` in Claude Code.
+- **`cm test` recognizes HTTP 402** — "token VALID but INSUFFICIENT BALANCE" now displays a top-up link instead of being lumped into "unexpected status".
+- **Aliases** — `cm claude` → anthropic, `cm z` → zai, `cm or` → openrouter. Muscle memory works whichever name you use.
+- **Restore picker shows formatted timestamps** — `2026-05-06 11:36:42` instead of `settings_20260506_113642.json`. Newest backup at the top.
+- **`cm test` 200/400/404 success** — the validator now treats both 200 and 400/404 as "auth works" (400/404 just means our minimal request body / model name was rejected, but the auth header was accepted). Reduces false negatives.
 
 ### v1.8.0 (2026-04-13)
 - **Python detection** — `claude-manager.sh` now tries `python3`, then `python`, then `py` in order. Fixes Windows where Python is usually installed as `python` or `py`, not `python3`. Also detects and rejects the Microsoft Store fake `python` alias (which exits 0 but prints to stderr only).
