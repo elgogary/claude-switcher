@@ -4,11 +4,12 @@
 
 set -uo pipefail
 
-VERSION="1.8.0"
+VERSION="1.9.0"
 
 CLAUDE_DIR="$HOME/.claude"
 SETTINGS="$CLAUDE_DIR/settings.json"
 BACKUP_DIR="$CLAUDE_DIR/backups"
+LAST_FILE="$CLAUDE_DIR/.cm-last"
 
 mkdir -p "$BACKUP_DIR"
 
@@ -31,6 +32,26 @@ PROVIDER_URLS=(
     "(set ANTHROPIC_BASE_URL in ~/.claude/settings-custom.json first)"
 )
 PROVIDER_PATTERNS=(z.ai "" openrouter deepseek moonshot "")
+# MODEL: primary model / fallback model
+PROVIDER_MODELS=(
+    "glm-5.1 / glm-4.5-air"
+    "claude-sonnet-4 / claude-haiku-4"
+    "varies"
+    "deepseek-v4-pro / deepseek-v4-flash"
+    "kimi-k2-0905-preview"
+    "varies"
+)
+# CTX: context window size
+PROVIDER_CTX=("200K" "200K" "varies" "1M" "256K" "varies")
+# COST: input / output per 1M tokens (USD)
+PROVIDER_COST=(
+    "\$1.40 in / \$4.40 out"
+    "\$3/\$15 Sonnet  |  \$15/\$75 Opus"
+    "varies"
+    "\$0.41 in / \$0.83 out (75% off thru May 31)"
+    "\$0.60 in / \$2.50 out"
+    "varies"
+)
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 CYAN='\033[0;36m'; WHITE='\033[1;37m'; GRAY='\033[0;90m'
@@ -180,10 +201,15 @@ show_status() {
     else
         echo -e "${WHITE}Base URL    : Default (api.anthropic.com)${NC}"
     fi
+    if [ -n "$idx" ]; then
+        echo -e "${GREEN}Models      : ${PROVIDER_MODELS[$idx]}${NC}"
+        echo -e "${GREEN}Context     : ${PROVIDER_CTX[$idx]}${NC}"
+        echo -e "${YELLOW}Cost /1M tok: ${PROVIDER_COST[$idx]}${NC}"
+    fi
     echo -e "${GRAY}Auth Token  : ${TOKEN:0:12}...${NC}"
-    [ -n "$SONNET" ] && echo -e "${GREEN}  Sonnet (Default): $SONNET${NC}"
-    [ -n "$HAIKU" ]  && echo -e "${WHITE}  Haiku           : $HAIKU${NC}"
-    [ -n "$OPUS" ]   && echo -e "${WHITE}  Opus            : $OPUS${NC}"
+    [ -n "$SONNET" ] && echo -e "${WHITE}  Sonnet (Active): $SONNET${NC}"
+    [ -n "$HAIKU" ]  && echo -e "${WHITE}  Haiku  (Active): $HAIKU${NC}"
+    [ -n "$OPUS" ]   && echo -e "${WHITE}  Opus   (Active): $OPUS${NC}"
 
     local bk_count
     bk_count=$(find "$BACKUP_DIR" -maxdepth 1 -name 'settings_*.json' 2>/dev/null | wc -l)
@@ -224,10 +250,99 @@ switch_provider() {
         fi
     fi
 
+    # save previous provider for `cm last`
+    local prev
+    prev=$(current_provider)
+    [ "$prev" != "$provider" ] && [ "$prev" != "unknown" ] && echo "$prev" > "$LAST_FILE"
+
     backup_settings
-    cp "$template" "$SETTINGS"
+
+    # MERGE template env into existing settings.json — preserves permissions,
+    # plugins, model, and all other keys. Only the `env` section is replaced.
+    require_python && "$PY" - "$SETTINGS" "$template" <<'PY'
+import json, re, sys
+settings_path, template_path = sys.argv[1], sys.argv[2]
+
+# Read existing settings (or start fresh)
+try:
+    with open(settings_path) as f:
+        settings = json.load(f)
+except (FileNotFoundError, json.JSONDecodeError):
+    settings = {}
+
+# Read template
+with open(template_path) as f:
+    template = json.load(f)
+
+# Replace ONLY the env section from the template
+template_env = template.get("env", {}) or {}
+# Strip placeholder tokens before merging
+template_env = {k: v for k, v in template_env.items()
+                if not re.match(r'YOUR_.*_HERE$', str(v)) and v != ''}
+settings["env"] = template_env
+
+with open(settings_path, "w") as f:
+    json.dump(settings, f, indent=2)
+    f.write("\n")
+PY
+
     echo -e "${GREEN}[OK] Switched to $provider_name${NC}"
-    echo -e "${CYAN}[DONE] Restart Claude Code to apply.${NC}\n"
+
+    # Warn if this looks like an active Claude Code session — the current window
+    # will still use the old credentials until restarted.
+    if [ -n "${CLAUDE_CODE:-}${ANTHROPIC_API_KEY:-}" ] || \
+       ps aux 2>/dev/null | grep -q '[c]laude' || \
+       [ -n "${TERM_PROGRAM:-}" ]; then
+        echo -e "${YELLOW}[!] Open a NEW terminal tab or run /restart in Claude Code.${NC}"
+        echo -e "${GRAY}    This window still uses the old provider until restarted.${NC}"
+    else
+        echo -e "${CYAN}Restart Claude Code to apply.${NC}"
+    fi
+    echo
+}
+
+# -----------------------------------------------------------------------------
+# switch_last — toggle back to the previous provider
+# -----------------------------------------------------------------------------
+switch_last() {
+    if [ ! -f "$LAST_FILE" ]; then
+        echo -e "${RED}[ERROR] No previous provider recorded. Switch once first.${NC}" >&2
+        return 1
+    fi
+    local prev
+    prev=$(cat "$LAST_FILE")
+    if ! provider_index "$prev" >/dev/null; then
+        echo -e "${RED}[ERROR] Last provider '$prev' is no longer valid.${NC}" >&2
+        return 1
+    fi
+    switch_provider "$prev" fast
+}
+
+# -----------------------------------------------------------------------------
+# quick_status — single line, no API ping, instant
+# -----------------------------------------------------------------------------
+quick_status() {
+    load_settings || { echo -e "${RED}not configured${NC}"; return; }
+    local name label idx
+    name=$(current_provider)
+    if idx=$(provider_index "$name") 2>/dev/null; then
+        label="${PROVIDER_LABELS[$idx]}"
+    else
+        label="Unknown"
+    fi
+    local tok_short="${TOKEN:0:8}..."
+    [ -z "$TOKEN" ] && tok_short="(no token)"
+    local last_label="" extra=""
+    if [ -n "$idx" ]; then
+        extra=" ${GRAY}[${PROVIDER_CTX[$idx]} ctx | ${PROVIDER_COST[$idx]}]${NC}"
+    fi
+    if [ -f "$LAST_FILE" ]; then
+        local lp; lp=$(cat "$LAST_FILE")
+        if idx=$(provider_index "$lp") 2>/dev/null; then
+            last_label=" ${GRAY}(last: ${PROVIDER_LABELS[$idx]})${NC}"
+        fi
+    fi
+    echo -e "${GREEN}●${NC} ${WHITE}$label${NC}  ${GRAY}$tok_short${NC}${extra}${last_label}"
 }
 
 # -----------------------------------------------------------------------------
@@ -446,8 +561,10 @@ interactive_menu() {
         echo ""
         local i
         for i in "${!PROVIDER_NAMES[@]}"; do
-            echo -e "  ${WHITE}$((i+1))${NC}) Switch to ${PROVIDER_LABELS[$i]}"
+            printf "  ${WHITE}%s${NC}) %-22s ${GRAY}%-30s %-16s %s${NC}\n" \
+                "$((i+1))" "${PROVIDER_LABELS[$i]}" "${PROVIDER_MODELS[$i]}" "${PROVIDER_CTX[$i]} ctx" "${PROVIDER_COST[$i]}"
         done
+        echo -e "  ${WHITE}l${NC}) Switch to ${WHITE}l${NC}ast provider"
         echo -e "  ${WHITE}t${NC}) Show full s${WHITE}t${NC}atus"
         echo -e "  ${WHITE}b${NC}) Restore a ${WHITE}b${NC}ackup"
         echo -e "  ${WHITE}w${NC}) Run setup ${CYAN}w${NC}izard"
@@ -463,6 +580,7 @@ interactive_menu() {
             read -r -p "Press Enter..." _
         else
             case "$choice" in
+                l|L) switch_last; current=$(current_provider); read -r -p "Press Enter..." _ ;;
                 t|T) show_status; read -r -p "Press Enter..." _ ;;
                 b|B) restore_backup; current=$(current_provider); read -r -p "Press Enter..." _ ;;
                 w|W) setup_wizard; current=$(current_provider); read -r -p "Press Enter..." _ ;;
@@ -521,6 +639,7 @@ test_one_provider() {
         401)        echo -e "  ${RED}[X]${NC}   $label — token INVALID (401 unauthorized)"; return 1 ;;
         403)        echo -e "  ${RED}[X]${NC}   $label — token FORBIDDEN (403)"; return 1 ;;
         429)        echo -e "  ${YELLOW}[!]${NC}  $label — token valid but RATE LIMITED (429)" ;;
+	402)        echo -e "  ${YELLOW}[!]${NC}  $label — token VALID, but INSUFFICIENT BALANCE (402). Top up at ${PROVIDER_URLS[$idx]}" ;;
         000)        echo -e "  ${RED}[X]${NC}   $label — could not reach $url (network/DNS error)"; return 1 ;;
         *)          echo -e "  ${YELLOW}[?]${NC}  $label — unexpected HTTP $http_code from $url"; return 1 ;;
     esac
@@ -556,12 +675,15 @@ show_help() {
     echo
     echo -e "${YELLOW}Usage:${NC}"
     echo "  cm                    Open interactive menu"
+    echo "  cm qs                 Quick status — one line, instant (no API ping)"
+    echo "  cm last               Switch back to previous provider"
     echo "  cm setup              Run setup wizard (interactive, enter tokens)"
     echo "  cm setup-quiet        Non-interactive setup from CM_*_TOKEN env vars"
     echo "  cm test [provider]    Validate token by pinging the provider's API"
     local i
     for i in "${!PROVIDER_NAMES[@]}"; do
-        printf "  cm %-16s Switch to %s\n" "${PROVIDER_NAMES[$i]} [fast]" "${PROVIDER_LABELS[$i]}"
+        printf "  cm %-16s %-22s ${GRAY}%-16s %s${NC}\n" \
+            "${PROVIDER_NAMES[$i]} [fast]" "${PROVIDER_LABELS[$i]}" "${PROVIDER_CTX[$i]} ctx" "${PROVIDER_COST[$i]}"
     done
     echo "  cm status             Show current provider"
     echo "  cm restore            Restore from backup"
@@ -575,6 +697,8 @@ main() {
     case "$cmd" in
         menu|"")              interactive_menu; return ;;
         check|status)         show_status; return ;;
+        qs|quick)             quick_status; return ;;
+        last|back|prev)       switch_last; return ;;
         restore)              restore_backup; return ;;
         setup|wizard)         setup_wizard; return ;;
         setup-quiet|quiet)    setup_quiet; return ;;
